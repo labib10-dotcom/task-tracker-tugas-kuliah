@@ -1,32 +1,34 @@
 name: Auto Bot Tracker UT
 
 on:
-  schedule:
-    -cron: '0 */6 * * *'
   workflow_dispatch:
+  schedule:
+    - cron: "0 */6 * * *"
 
 jobs:
   jalankan-bot:
     runs-on: ubuntu-latest
+
     steps:
       - name: Ambil Kodingan
         uses: actions/checkout@v4
 
-      - name: Menyiapkan Mesin Java
+      - name: Siapin Mesin Java
         uses: actions/setup-java@v4
         with:
           java-version: '17'
-          distribusion: 'temurin'
+          distribution: 'temurin'
           cache: maven
 
-      - name: 🔐 Bikin File .env
+      - name: Bikin File env
         run: |
           echo "UT_NIM=${{ secrets.UT_NIM }}" >> .env
           echo "UT_PASS=${{ secrets.UT_PASS }}" >> .env
           echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> .env
           echo "TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}" >> .env
-      - name: 📦 Masak Kodingan (Build)
+
+      - name: Masak Kodingan
         run: mvn clean package
 
-      - name: 🚀 Jalanin Bot!
-        run: java -jar target/*-jar-with-dependencies.jar
+      - name: Jalanin Bot
+        run: sh -c "java -jar target/*-jar-with-dependencies.jar"
