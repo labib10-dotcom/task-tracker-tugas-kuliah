@@ -15,8 +15,45 @@ public class App {
     private static final Dotenv dotenv = Dotenv.load();
     private static final String NIM = dotenv.get("UT_NIM");
     private static final String PASS = dotenv.get("UT_PASS");
-    
+
+    public static void sendTelegramNotification(String message) {
+        try {
+            String botToken = dotenv.get("TELEGRAM_BOT_TOKEN");
+            String chatId = dotenv.get("TELEGRAM_CHAT_ID");
+
+            if (botToken == null || chatId == null) {
+                System.out.println("⚠\uFE0F Token atau Chat ID Telegram belum diset!");
+                return;
+            }
+
+            String url = "https://api.telegram.org/bot" + botToken + "/sendMessage";
+
+            JSONObject jsonBody = new JSONObject();
+            jsonBody.put("chat_id", chatId);
+            jsonBody.put("text", message);
+
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody.toString()))
+                    .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 200) {
+                System.out.println("✅ Notif Telegram sukses terkirim!");
+            } else {
+                System.out.println("❌ Gagal kirim Telegram: " + response.body());
+            }
+        } catch (Exception e) {
+            System.out.println("🚨 Error Telegram: " + e.getMessage());
+        }
+
+    }
+
     public static void main(String[] args) {
+        sendTelegramNotification("Halo bro! Bot Tracker UT udah berhasil nyala! 🚀");
         System.out.println("🚀 MENGAKTIFKAN BACKGROUND BOT TRACKER UT...");
 
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
@@ -93,8 +130,11 @@ public class App {
 
             if (matkulArray.isEmpty()) {
                 System.out.println("📭 Mata Kuliah masih kosong (Libur Semester). Standby...");
+                sendTelegramNotification("⚠️Tidak ditemukan pembaharuan pada web. Mata Kuliah masih kosong!");
             } else {
                 System.out.println("📋 Mata Kuliah aktif terdeteksi! (Ada " + matkulArray.length() + " kelas)");
+
+                sendTelegramNotification("🚨Pembaharuan E-learning ditemukan " + matkulArray.length() + " Mata Kuliah yang aktif di e-learning UT.");
             }
         } catch (Exception e) {
             System.out.println("❌ Gagal narik Mata Kuliah: " + e.getMessage());

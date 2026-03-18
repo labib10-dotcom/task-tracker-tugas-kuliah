@@ -1,4 +1,4 @@
-.env
+../Bot Tracker/.env
 target/
 .vscode/
 .idea/
