@@ -56,9 +56,6 @@ public class App {
         sendTelegramNotification("Halo bro! Bot Tracker UT udah berhasil nyala! 🚀");
         System.out.println("🚀 MENGAKTIFKAN BACKGROUND BOT TRACKER UT...");
 
-        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-
-        Runnable tugasRutinan = () -> {
             System.out.println("\n⏳ [" + java.time.LocalTime.now() + "] Bot bangun! Mengecek e-learning...");
             
             // 1. Dapatkan Token Login
@@ -75,10 +72,6 @@ public class App {
             }
             
             System.out.println("💤 Pengecekan selesai. Bot tidur lagi...");
-        };
-
-        // Kita set bot jalan tiap 6 Jam.
-        scheduler.scheduleAtFixedRate(tugasRutinan, 0, 6, TimeUnit.HOURS);
     }
 
     // ==========================================

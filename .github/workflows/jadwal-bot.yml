@@ -1,4 +1,5 @@
 name: Auto Bot Tracker UT
+
 on:
   schedule:
     -cron: '0 */6 * * *'
@@ -7,18 +8,18 @@ on:
 jobs:
   jalankan-bot:
     runs-on: ubuntu-latest
-
     steps:
-      - name: 🗃️ Ambil Kodingan
+      - name: Ambil Kodingan
         uses: actions/checkout@v4
 
-      - name: ☕ Menyiapkan Mesin Java
+      - name: Menyiapkan Mesin Java
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribusion: 'temurin'
           cache: maven
-      - name: 🔐 Bikin File .env Dadakan dari brankas
+
+      - name: 🔐 Bikin File .env
         run: |
           echo "UT_NIM=${{ secrets.UT_NIM }}" >> .env
           echo "UT_PASS=${{ secrets.UT_PASS }}" >> .env
@@ -28,3 +29,4 @@ jobs:
         run: mvn clean package
 
       - name: 🚀 Jalanin Bot!
+        run: java -jar target/*-jar-with-dependencies.jar
