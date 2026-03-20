@@ -72,7 +72,7 @@ public class App {
             }
 
             System.out.println("Mencoba mengirim laporan ke Notion...");
-            System.out.println("Uji Coba Sistem Bot - " + java.time.LocalTime.now());
+            kirimNotion("Uji Coba Sistem Bot - " + java.time.LocalTime.now());
 
             System.out.println("💤 Pengecekan selesai. Bot tidur lagi...");
     }
