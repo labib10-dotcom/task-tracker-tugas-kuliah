@@ -29,5 +29,8 @@ jobs:
           echo "NOTION_TOKEN=${{ secrets.NOTION_TOKEN }}" >> .env
           echo "NOTION_DATABASE_ID=${{ secrets.NOTION_DATABASE_ID }}" >> .env
 
+      - name: Masak Kodingan
+        run: mvn clean package
+
       - name: Jalanin Bot
         run: sh -c "java -jar target/*-jar-with-dependencies.jar"
