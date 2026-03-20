@@ -70,7 +70,10 @@ public class App {
                     cekDaftarMatkul(token, userId);
                 }
             }
-            
+
+            System.out.println("Mencoba mengirim laporan ke Notion...");
+            System.out.println("Uji Coba Sistem Bot - " + java.time.LocalTime.now());
+
             System.out.println("💤 Pengecekan selesai. Bot tidur lagi...");
     }
 
@@ -131,6 +134,52 @@ public class App {
             }
         } catch (Exception e) {
             System.out.println("❌ Gagal narik Mata Kuliah: " + e.getMessage());
+        }
+    }
+
+    public static void kirimNotion(String teksLaporan) {
+        try {
+            String notionToken = System.getenv("NOTION_TOKEN");
+            String databaseId = System.getenv("NOTION_DATABASE");
+
+            if  (notionToken == null || databaseId == null) {
+                System.out.println("❌ Token atau Database NOTION belum dipasang!");
+            }
+
+            String jsonData = "{"
+                    + "\"parent\": { \"database_id\": \"" + databaseId + "\" },"
+                    + "\"properties\": {"
+                    + "  \"Name\": {"
+                    + "    \"title\": ["
+                    + "      {"
+                    + "        \"text\": {"
+                    + "          \"content\": \"" + teksLaporan + "\""
+                    + "        }"
+                    + "      }"
+                    + "    ]"
+                    + "  }"
+                    + "}"
+                    + "}";
+
+            java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create("https://api.notion.com/v1/pages"))
+                    .header("Authorization", "Bearer " + notionToken)
+                    .header("Content-Type", "application/json")
+                    .header("Notion-Version", "2022-06-28")
+                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString(jsonData))
+                    .build();
+
+            java.net.http.HttpResponse<String> response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 200) {
+                System.out.println("Berhasil nulis ke Noiton!");
+            } else {
+                System.out.println("❌ Gagal nulis ke Notion. Kode Error: " + response.statusCode());
+                System.out.println("Detail: " + response.body());
+            }
+        } catch (Exception e) {
+            System.out.println("Sistem error saat mengirim ke Notion: " + e.getMessage());
         }
     }
 }
