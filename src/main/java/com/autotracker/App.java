@@ -4,9 +4,6 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import io.github.cdimascio.dotenv.Dotenv; // Import brankas rahasia
@@ -22,7 +19,7 @@ public class App {
             String chatId = dotenv.get("TELEGRAM_CHAT_ID");
 
             if (botToken == null || chatId == null) {
-                System.out.println("⚠\uFE0F Token atau Chat ID Telegram belum diset!");
+                System.out.println("⚠️ Token atau Chat ID Telegram belum diset!");
                 return;
             }
 
@@ -49,32 +46,32 @@ public class App {
         } catch (Exception e) {
             System.out.println("🚨 Error Telegram: " + e.getMessage());
         }
-
     }
 
     public static void main(String[] args) {
         sendTelegramNotification("Halo bro! Bot Tracker UT udah berhasil nyala! 🚀");
-        System.out.println("🚀 MENGAKTIFKAN BACKGROUND BOT TRACKER UT...");
 
-            System.out.println("\n⏳ [" + java.time.LocalTime.now() + "] Bot bangun! Mengecek e-learning...");
-            
-            // 1. Dapatkan Token Login
-            String token = getUtToken();
-            
-            if (token != null) {
-                // 2. Dapatkan User ID
-                int userId = getUserId(token);
-                
-                if (userId != -1) {
-                    // 3. Cek Daftar Matkul
-                    cekDaftarMatkul(token, userId);
-                }
+        System.out.println("\n⏳ [" + java.time.LocalTime.now() + "] Bot bangun! Mengecek e-learning...");
+
+        // 1. Dapatkan Token Login
+        String token = getUtToken();
+
+        if (token != null) {
+            // 2. Dapatkan User ID
+            int userId = getUserId(token);
+
+            if (userId != -1) {
+                // 3. Cek Daftar Matkul
+                cekDaftarMatkul(token, userId);
             }
+        }
 
-            System.out.println("Mencoba mengirim laporan ke Notion...");
-            kirimNotion("Uji Coba Sistem Bot - " + java.time.LocalTime.now());
+        System.out.println("Mencoba mengirim laporan ke Notion...");
 
-            System.out.println("💤 Pengecekan selesai. Bot tidur lagi...");
+        // INI YANG BENER BRO! Manggil fungsi, bukan nge-print!
+        kirimNotion("Uji Coba Sistem Bot - " + java.time.LocalTime.now());
+
+        System.out.println("💤 Pengecekan selesai. Bot tidur lagi...");
     }
 
     // ==========================================
@@ -88,7 +85,7 @@ public class App {
             HttpRequest request = HttpRequest.newBuilder().uri(URI.create(targetUrl)).GET().build();
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             JSONObject jsonObj = new JSONObject(response.body());
-            
+
             if (jsonObj.has("token")) {
                 return jsonObj.getString("token");
             }
@@ -105,7 +102,7 @@ public class App {
             HttpRequest request = HttpRequest.newBuilder().uri(URI.create(urlSiteInfo)).GET().build();
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             JSONObject profilJson = new JSONObject(response.body());
-            
+
             if(profilJson.has("userid")) {
                 return profilJson.getInt("userid");
             }
@@ -116,21 +113,20 @@ public class App {
     }
 
     private static void cekDaftarMatkul(String token, int userId) {
-        String urlCourses = "https://elearning.ut.ac.id/webservice/rest/server.php?wstoken=" + token + "&wsfunction=core_enrol_get_users_courses&moodlewsrestformat=json&userid=" + userId; 
+        String urlCourses = "https://elearning.ut.ac.id/webservice/rest/server.php?wstoken=" + token + "&wsfunction=core_enrol_get_users_courses&moodlewsrestformat=json&userid=" + userId;
         try {
             HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder().uri(URI.create(urlCourses)).GET().build();
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-            
+
             JSONArray matkulArray = new JSONArray(response.body());
 
             if (matkulArray.isEmpty()) {
                 System.out.println("📭 Mata Kuliah masih kosong (Libur Semester). Standby...");
-                sendTelegramNotification("⚠️Tidak ditemukan pembaharuan pada web. Mata Kuliah masih kosong!");
+                sendTelegramNotification("⚠️ Tidak ditemukan pembaharuan pada web. Mata Kuliah masih kosong!");
             } else {
                 System.out.println("📋 Mata Kuliah aktif terdeteksi! (Ada " + matkulArray.length() + " kelas)");
-
-                sendTelegramNotification("🚨Pembaharuan E-learning ditemukan " + matkulArray.length() + " Mata Kuliah yang aktif di e-learning UT.");
+                sendTelegramNotification("🚨 Pembaharuan E-learning ditemukan " + matkulArray.length() + " Mata Kuliah yang aktif di e-learning UT.");
             }
         } catch (Exception e) {
             System.out.println("❌ Gagal narik Mata Kuliah: " + e.getMessage());
@@ -139,11 +135,13 @@ public class App {
 
     public static void kirimNotion(String teksLaporan) {
         try {
-            String notionToken = System.getenv("NOTION_TOKEN");
-            String databaseId = System.getenv("NOTION_DATABASE");
+            // BENERIN CARA MANGGIL BRANKAS BIAR SAMA KAYAK TELEGRAM
+            String notionToken = dotenv.get("NOTION_TOKEN");
+            String databaseId = dotenv.get("NOTION_DATABASE_ID"); // Nambahin _ID
 
             if  (notionToken == null || databaseId == null) {
                 System.out.println("❌ Token atau Database NOTION belum dipasang!");
+                return; // TAMBAHIN INI BIAR NGGAK ERROR PAS KOSONG
             }
 
             String jsonData = "{"
@@ -173,13 +171,13 @@ public class App {
             java.net.http.HttpResponse<String> response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() == 200) {
-                System.out.println("Berhasil nulis ke Noiton!");
+                System.out.println("✅ Berhasil nulis ke Notion!");
             } else {
                 System.out.println("❌ Gagal nulis ke Notion. Kode Error: " + response.statusCode());
                 System.out.println("Detail: " + response.body());
             }
         } catch (Exception e) {
-            System.out.println("Sistem error saat mengirim ke Notion: " + e.getMessage());
+            System.out.println("❌ Sistem error saat mengirim ke Notion: " + e.getMessage());
         }
     }
 }
