@@ -120,7 +120,11 @@ public class App {
 
             if (eventsArray.isEmpty()) {
                 System.out.println("📭 Radar Kosong. Belum ada tugas/diskusi baru.");
-                sendTelegramNotification("📭 Status Laporan: Tuton belum dimulai. Belum ada tugas atau diskusi baru yang masuk ke sistem.");
+                if (eventsArray.isEmpty()) {
+                    sendTelegramNotification("📭 Tuton belum dimulai");
+                } else {
+                    sendTelegramNotification("📭 Status Laporan: Tuton belum dimulai. Belum ada tugas atau diskusi baru yang masuk ke sistem.");
+                }
 
             } else {
                 System.out.println("🚨 BINGO! Ditemukan " + eventsArray.length() + " Tugas!");
