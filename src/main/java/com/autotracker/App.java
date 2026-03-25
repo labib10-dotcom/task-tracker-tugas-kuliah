@@ -128,7 +128,7 @@ public class App {
                     String namaMatkul = matkul.getString("fullname");
                     System.out.println("Mengirim ke Notion: " +namaMatkul);
 
-                    kirimNotion(namaMatkul);
+                    //kirimNotion(namaMatkul);
                 }
             }
         } catch (Exception e) {
