@@ -43,6 +43,12 @@ public class App {
 
         String token = getUtToken();
         if (token != null) {
+            int userId = getUserId(token);
+
+            if (userId != -1) {
+                cekDaftarMatkul(token, userId);
+            }
+
             cekTugasPending(token);
         }
 
@@ -68,6 +74,37 @@ public class App {
         return null;
     }
 
+    private static int getUserId(String token) {
+        String urlSiteInfo = "https://elearning.ut.ac.id/webservice/rest/server.php?wstoken=" + token + "&wsfunction=core_webservice_get_site_info&moodlewsrestformat=json";
+        try {
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(urlSiteInfo)).GET().build();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            JSONObject profilJson = new JSONObject(response.body());
+            if(profilJson.has("userid")) return profilJson.getInt("userid");
+        } catch (Exception e) {
+            System.out.println("❌ Gagal ambil profil: " + e.getMessage());
+        }
+        return -1;
+    }
+
+    private static void cekDaftarMatkul(String token, int userId) {
+        String urlCourses = "https://elearning.ut.ac.id/webservice/rest/server.php?wstoken=" + token + "&wsfunction=core_enrol_get_users_courses&moodlewsrestformat=json&userid=" + userId;
+        try {
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(urlCourses)).GET().build();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            JSONArray matkulArray = new JSONArray(response.body());
+
+            if (!matkulArray.isEmpty()) {
+                System.out.println("📋 Radar 1: Ada " + matkulArray.length() + " Matkul.");
+                sendTelegramNotification("📚 Info!vMata Kuliah baru ditemukan " + matkulArray.length() + "Telah aktif di e-learning UT.");
+            }
+        } catch (Exception e) {
+            System.out.println("❌ Gagal narik Mata Kuliah: " + e.getMessage());
+        }
+    }
+
     private static void cekTugasPending(String token) {
         String urlCalendar = "https://elearning.ut.ac.id/webservice/rest/server.php?wstoken=" + token + "&wsfunction=core_calendar_get_action_events_by_timesort&moodlewsrestformat=json";
 
@@ -84,7 +121,7 @@ public class App {
                 System.out.println("📭 Radar Kosong. Belum ada tugas/diskusi baru.");
             } else {
                 System.out.println("🚨 BINGO! Ditemukan " + eventsArray.length() + " Tugas!");
-                sendTelegramNotification("🚨 Bro! Ada " + eventsArray.length() + " Tugas/Diskusi pending di e-learning lu! Udah gue masukin ke Notion ya.");
+                sendTelegramNotification("🚨 Alert! Ada " + eventsArray.length() + " Tugas/Diskusi pending di e-learning!");
 
                 // BONGKAR TUGAS DAN KIRIM RAPI KE NOTION
                 for (int i = 0; i < eventsArray.length(); i++) {
