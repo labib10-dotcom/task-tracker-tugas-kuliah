@@ -99,7 +99,7 @@ public class App {
 
             if (!matkulArray.isEmpty()) {
                 System.out.println("📋 Radar 1: Ada " + matkulArray.length() + " Matkul.");
-                sendTelegramNotification("📚 Info! Mata Kuliah baru ditemukan ada " + matkulArray.length() + " mata kuliah baru telah aktif di e-learning UT!");
+                sendTelegramNotification("📚 Info! Mata Kuliah: ditemukan ada " + matkulArray.length() + " mata kuliah baru telah aktif di e-learning UT!");
             }
         } catch (Exception e) {
             System.out.println("❌ Gagal narik Mata Kuliah: " + e.getMessage());
@@ -120,6 +120,8 @@ public class App {
 
             if (eventsArray.isEmpty()) {
                 System.out.println("📭 Radar Kosong. Belum ada tugas/diskusi baru.");
+                sendTelegramNotification("📭 Status Laporan: Tuton belum dimulai. Belum ada tugas atau diskusi baru yang masuk ke sistem.");
+
             } else {
                 System.out.println("🚨 BINGO! Ditemukan " + eventsArray.length() + " Tugas!");
                 sendTelegramNotification("🚨 Alert! Ada " + eventsArray.length() + " Tugas/Diskusi pending di e-learning!");
