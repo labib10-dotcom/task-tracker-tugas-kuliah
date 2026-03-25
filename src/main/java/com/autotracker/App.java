@@ -13,13 +13,36 @@ public class App {
     private static final String NIM = dotenv.get("UT_NIM");
     private static final String PASS = dotenv.get("UT_PASS");
 
+    public static void sendTelegramNotification(String message) {
+        try {
+            String botToken = dotenv.get("TELEGRAM_BOT_TOKEN");
+            String chatId = dotenv.get("TELEGRAM_CHAT_ID");
+
+            if (botToken == null || chatId == null) return;
+
+            String url = "https://api.telegram.org/bot" + botToken + "/sendMessage";
+            JSONObject jsonBody = new JSONObject();
+            jsonBody.put("chat_id", chatId);
+            jsonBody.put("text", message);
+
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody.toString()))
+                    .build();
+
+            client.send(request, HttpResponse.BodyHandlers.ofString());
+        } catch (Exception e) {
+            System.out.println("🚨 Error Telegram: " + e.getMessage());
+        }
+    }
+
     public static void main(String[] args) {
         System.out.println("\n⏳ [" + java.time.LocalTime.now() + "] Bot bangun! Mengecek e-learning...");
 
         String token = getUtToken();
-
         if (token != null) {
-            // FASE 3: LANGSUNG CEK TUGAS/DISKUSI PENDING
             cekTugasPending(token);
         }
 
@@ -27,7 +50,7 @@ public class App {
     }
 
     // ==========================================
-    // FUNGSI-FUNGSI API
+    // FUNGSI API MOODLE & NOTION
     // ==========================================
 
     private static String getUtToken() {
@@ -38,16 +61,13 @@ public class App {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             JSONObject jsonObj = new JSONObject(response.body());
 
-            if (jsonObj.has("token")) {
-                return jsonObj.getString("token");
-            }
+            if (jsonObj.has("token")) return jsonObj.getString("token");
         } catch (Exception e) {
             System.out.println("❌ Gagal login API: " + e.getMessage());
         }
         return null;
     }
 
-    // RADAR BARU KHUSUS DETEKSI TUGAS & DISKUSI
     private static void cekTugasPending(String token) {
         String urlCalendar = "https://elearning.ut.ac.id/webservice/rest/server.php?wstoken=" + token + "&wsfunction=core_calendar_get_action_events_by_timesort&moodlewsrestformat=json";
 
@@ -61,23 +81,69 @@ public class App {
             JSONArray eventsArray = jsonResponse.getJSONArray("events");
 
             if (eventsArray.isEmpty()) {
-                System.out.println("📭 Radar Kosong. Tugas dan Diskusi belum masuk ke kalender API (atau masih digembok total dari pusat).");
+                System.out.println("📭 Radar Kosong. Belum ada tugas/diskusi baru.");
             } else {
-                System.out.println("🚨 BINGO! Ditemukan " + eventsArray.length() + " Tugas/Diskusi di kalender!");
+                System.out.println("🚨 BINGO! Ditemukan " + eventsArray.length() + " Tugas!");
+                sendTelegramNotification("🚨 Bro! Ada " + eventsArray.length() + " Tugas/Diskusi pending di e-learning lu! Udah gue masukin ke Notion ya.");
 
-                // BONGKAR ISI TUGASNYA
+                // BONGKAR TUGAS DAN KIRIM RAPI KE NOTION
                 for (int i = 0; i < eventsArray.length(); i++) {
                     JSONObject event = eventsArray.getJSONObject(i);
                     String namaTugas = event.getString("name");
                     String namaMatkul = event.getJSONObject("course").getString("fullname");
 
-                    System.out.println("👉 TUGAS: " + namaTugas + " | MATKUL: " + namaMatkul);
+                    System.out.println("👉 Memproses: " + namaTugas + " | " + namaMatkul);
 
-                    // Nanti kodingan kirim ke Notion bakal kita nyalain di sini
+                    kirimNotionRapi(namaTugas, namaMatkul);
                 }
             }
         } catch (Exception e) {
             System.out.println("❌ Gagal narik data tugas: " + e.getMessage());
+        }
+    }
+
+    public static void kirimNotionRapi(String namaTugas, String namaMatkul) {
+        try {
+            String notionToken = dotenv.get("NOTION_TOKEN");
+            String databaseId = dotenv.get("NOTION_DATABASE_ID");
+
+            if  (notionToken == null || databaseId == null) return;
+
+            // Bersihin tanda kutip biar format JSON gak rusak
+            namaTugas = namaTugas.replace("\"", "\\\"");
+            namaMatkul = namaMatkul.replace("\"", "\\\"");
+
+            // INI MAGIC-NYA: Kita masukin ke kolom Name dan Mata Kuliah
+            String jsonData = "{"
+                    + "\"parent\": { \"database_id\": \"" + databaseId + "\" },"
+                    + "\"properties\": {"
+                    + "  \"Name\": {"
+                    + "    \"title\": [ { \"text\": { \"content\": \"" + namaTugas + "\" } } ]"
+                    + "  },"
+                    + "  \"Mata Kuliah\": {"
+                    + "    \"select\": { \"name\": \"" + namaMatkul + "\" }"
+                    + "  }"
+                    + "}"
+                    + "}";
+
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.notion.com/v1/pages"))
+                    .header("Authorization", "Bearer " + notionToken)
+                    .header("Content-Type", "application/json")
+                    .header("Notion-Version", "2022-06-28")
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonData))
+                    .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 200) {
+                System.out.println("✅ Sukses nulis ke Notion: " + namaTugas);
+            } else {
+                System.out.println("❌ Gagal nulis Notion: " + response.body());
+            }
+        } catch (Exception e) {
+            System.out.println("❌ Sistem error Notion: " + e.getMessage());
         }
     }
 }
