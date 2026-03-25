@@ -66,11 +66,6 @@ public class App {
             }
         }
 
-        System.out.println("Mencoba mengirim laporan ke Notion...");
-
-        // INI YANG BENER BRO! Manggil fungsi, bukan nge-print!
-        kirimNotion("Uji Coba Sistem Bot - " + java.time.LocalTime.now());
-
         System.out.println("💤 Pengecekan selesai. Bot tidur lagi...");
     }
 
@@ -127,6 +122,14 @@ public class App {
             } else {
                 System.out.println("📋 Mata Kuliah aktif terdeteksi! (Ada " + matkulArray.length() + " kelas)");
                 sendTelegramNotification("🚨 Pembaharuan E-learning ditemukan " + matkulArray.length() + " Mata Kuliah yang aktif di e-learning UT.");
+
+                for (int i = 0; i < matkulArray.length(); i++) {
+                    JSONObject matkul = matkulArray.getJSONObject(i);
+                    String namaMatkul = matkul.getString("fullname");
+                    System.out.println("Mengirim ke Notion: " +namaMatkul);
+
+                    kirimNotion(namaMatkul);
+                }
             }
         } catch (Exception e) {
             System.out.println("❌ Gagal narik Mata Kuliah: " + e.getMessage());
