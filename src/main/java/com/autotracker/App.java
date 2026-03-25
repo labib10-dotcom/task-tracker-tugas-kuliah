@@ -39,6 +39,7 @@ public class App {
     }
 
     public static void main(String[] args) {
+        sendTelegramNotification("Halo bro! Bot Tracker UT udah berhasil nyala! 🚀");
         System.out.println("\n⏳ [" + java.time.LocalTime.now() + "] Bot bangun! Mengecek e-learning...");
 
         String token = getUtToken();
@@ -98,7 +99,7 @@ public class App {
 
             if (!matkulArray.isEmpty()) {
                 System.out.println("📋 Radar 1: Ada " + matkulArray.length() + " Matkul.");
-                sendTelegramNotification("📚 Info!vMata Kuliah baru ditemukan " + matkulArray.length() + "Telah aktif di e-learning UT.");
+                sendTelegramNotification("📚 Info! Mata Kuliah baru ditemukan ada " + matkulArray.length() + " mata kuliah baru telah aktif di e-learning UT!");
             }
         } catch (Exception e) {
             System.out.println("❌ Gagal narik Mata Kuliah: " + e.getMessage());
