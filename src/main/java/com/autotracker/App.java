@@ -127,7 +127,7 @@ public class App {
             if (eventsArray.isEmpty()) {
                 System.out.println("📭 Radar Kosong. Belum ada tugas/diskusi baru.");
                 if (jumlahMatkul >= 9) {
-                    sendTelegramNotification("📭 Status Laporan: Tuton belum dimulai. Belum ada tugas atau diskusi baru yang masuk ke sistem.");
+                    sendTelegramNotification("📭 Status Laporan:Mata kuliah lengkap, Tuton belum dimulai. Belum ada tugas atau diskusi baru yang masuk ke sistem.");
                 } else {
                     sendTelegramNotification("📭 Status Laporan: Tuton belum dimulai. Santai ae dulu bro");
                 }
