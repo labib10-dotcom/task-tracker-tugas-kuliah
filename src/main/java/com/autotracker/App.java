@@ -45,12 +45,14 @@ public class App {
         String token = getUtToken();
         if (token != null) {
             int userId = getUserId(token);
+            int jumlahMatkul = 0;
+
 
             if (userId != -1) {
-                cekDaftarMatkul(token, userId);
+                jumlahMatkul = cekDaftarMatkul(token, userId);
             }
 
-            cekTugasPending(token);
+            cekTugasPending(token, jumlahMatkul);
         }
 
         System.out.println("💤 Pengecekan selesai. Bot tidur lagi...");
@@ -82,14 +84,14 @@ public class App {
             HttpRequest request = HttpRequest.newBuilder().uri(URI.create(urlSiteInfo)).GET().build();
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             JSONObject profilJson = new JSONObject(response.body());
-            if(profilJson.has("userid")) return profilJson.getInt("userid");
+            if (profilJson.has("userid")) return profilJson.getInt("userid");
         } catch (Exception e) {
             System.out.println("❌ Gagal ambil profil: " + e.getMessage());
         }
         return -1;
     }
 
-    private static void cekDaftarMatkul(String token, int userId) {
+    private static int cekDaftarMatkul(String token, int userId) {
         String urlCourses = "https://elearning.ut.ac.id/webservice/rest/server.php?wstoken=" + token + "&wsfunction=core_enrol_get_users_courses&moodlewsrestformat=json&userid=" + userId;
         try {
             HttpClient client = HttpClient.newHttpClient();
@@ -97,16 +99,20 @@ public class App {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             JSONArray matkulArray = new JSONArray(response.body());
 
-            if (!matkulArray.isEmpty()) {
+            int jumlah = matkulArray.length();
+
+            if (jumlah > 0) {
                 System.out.println("📋 Radar 1: Ada " + matkulArray.length() + " Matkul.");
                 sendTelegramNotification("📚 Info! Mata Kuliah: ditemukan ada " + matkulArray.length() + " mata kuliah baru telah aktif di e-learning UT!");
             }
+            return jumlah;
         } catch (Exception e) {
             System.out.println("❌ Gagal narik Mata Kuliah: " + e.getMessage());
+            return 0;
         }
     }
 
-    private static void cekTugasPending(String token) {
+    private static void cekTugasPending(String token, int jumlahMatkul) {
         String urlCalendar = "https://elearning.ut.ac.id/webservice/rest/server.php?wstoken=" + token + "&wsfunction=core_calendar_get_action_events_by_timesort&moodlewsrestformat=json";
 
         try {
@@ -120,8 +126,8 @@ public class App {
 
             if (eventsArray.isEmpty()) {
                 System.out.println("📭 Radar Kosong. Belum ada tugas/diskusi baru.");
-                if (eventsArray.isEmpty()) {
-                    sendTelegramNotification("📭 Tuton belum dimulai");
+                if (jumlahMatkul >= 9) {
+                    sendTelegramNotification("📭 Status Laporan: Mata Kuliah sudah lengkap. Tuton belum dimulai");
                 } else {
                     sendTelegramNotification("📭 Status Laporan: Tuton belum dimulai. Belum ada tugas atau diskusi baru yang masuk ke sistem.");
                 }
