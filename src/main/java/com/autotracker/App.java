@@ -4,6 +4,12 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.util.HashSet;
+import java.util.Set;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import io.github.cdimascio.dotenv.Dotenv;
@@ -12,6 +18,30 @@ public class App {
     private static final Dotenv dotenv = Dotenv.load();
     private static final String NIM = dotenv.get("UT_NIM");
     private static final String PASS = dotenv.get("UT_PASS");
+    
+    // Optimasi: HttpClient digunakan ulang (thread-safe)
+    private static final HttpClient httpClient = HttpClient.newHttpClient();
+    private static final String BASE_URL = "https://elearning.ut.ac.id";
+    private static final Path HISTORY_FILE = Paths.get("sent_tasks.txt");
+
+    private static Set<String> loadSentTasks() {
+        try {
+            if (Files.exists(HISTORY_FILE)) {
+                return new HashSet<>(Files.readAllLines(HISTORY_FILE));
+            }
+        } catch (Exception e) {
+            System.out.println("⚠️ Gagal membaca history tugas: " + e.getMessage());
+        }
+        return new HashSet<>();
+    }
+
+    private static void saveTaskToHistory(String taskId) {
+        try {
+            Files.write(HISTORY_FILE, (taskId + System.lineSeparator()).getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (Exception e) {
+            System.out.println("⚠️ Gagal menyimpan history: " + e.getMessage());
+        }
+    }
 
     public static void sendTelegramNotification(String message) {
         try {
@@ -25,14 +55,13 @@ public class App {
             jsonBody.put("chat_id", chatId);
             jsonBody.put("text", message);
 
-            HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(jsonBody.toString()))
                     .build();
 
-            client.send(request, HttpResponse.BodyHandlers.ofString());
+            httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         } catch (Exception e) {
             System.out.println("🚨 Error Telegram: " + e.getMessage());
         }
@@ -63,11 +92,10 @@ public class App {
     // ==========================================
 
     private static String getUtToken() {
-        String targetUrl = "https://elearning.ut.ac.id/login/token.php?username=" + NIM + "&password=" + PASS + "&service=moodle_mobile_app";
+        String targetUrl = BASE_URL + "/login/token.php?username=" + NIM + "&password=" + PASS + "&service=moodle_mobile_app";
         try {
-            HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder().uri(URI.create(targetUrl)).GET().build();
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             JSONObject jsonObj = new JSONObject(response.body());
 
             if (jsonObj.has("token")) return jsonObj.getString("token");
@@ -78,11 +106,10 @@ public class App {
     }
 
     private static int getUserId(String token) {
-        String urlSiteInfo = "https://elearning.ut.ac.id/webservice/rest/server.php?wstoken=" + token + "&wsfunction=core_webservice_get_site_info&moodlewsrestformat=json";
+        String urlSiteInfo = BASE_URL + "/webservice/rest/server.php?wstoken=" + token + "&wsfunction=core_webservice_get_site_info&moodlewsrestformat=json";
         try {
-            HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder().uri(URI.create(urlSiteInfo)).GET().build();
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             JSONObject profilJson = new JSONObject(response.body());
             if (profilJson.has("userid")) return profilJson.getInt("userid");
         } catch (Exception e) {
@@ -92,11 +119,10 @@ public class App {
     }
 
     private static int cekDaftarMatkul(String token, int userId) {
-        String urlCourses = "https://elearning.ut.ac.id/webservice/rest/server.php?wstoken=" + token + "&wsfunction=core_enrol_get_users_courses&moodlewsrestformat=json&userid=" + userId;
+        String urlCourses = BASE_URL + "/webservice/rest/server.php?wstoken=" + token + "&wsfunction=core_enrol_get_users_courses&moodlewsrestformat=json&userid=" + userId;
         try {
-            HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder().uri(URI.create(urlCourses)).GET().build();
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             JSONArray matkulArray = new JSONArray(response.body());
 
             int jumlah = matkulArray.length();
@@ -113,38 +139,52 @@ public class App {
     }
 
     private static void cekTugasPending(String token, int jumlahMatkul) {
-        String urlCalendar = "https://elearning.ut.ac.id/webservice/rest/server.php?wstoken=" + token + "&wsfunction=core_calendar_get_action_events_by_timesort&moodlewsrestformat=json";
+        String urlCalendar = BASE_URL + "/webservice/rest/server.php?wstoken=" + token + "&wsfunction=core_calendar_get_action_events_by_timesort&moodlewsrestformat=json";
 
         try {
             System.out.println("📡 Menyalakan radar tugas Moodle...");
-            HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder().uri(URI.create(urlCalendar)).GET().build();
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             JSONObject jsonResponse = new JSONObject(response.body());
             JSONArray eventsArray = jsonResponse.getJSONArray("events");
+            
+            Set<String> sentTasks = loadSentTasks();
+            int newTasksCount = 0;
 
             if (eventsArray.isEmpty()) {
                 System.out.println("📭 Radar Kosong. Belum ada tugas/diskusi baru.");
-                if (jumlahMatkul >= 9) {
-                    sendTelegramNotification("📭 Status Laporan: Mata kuliah lengkap, Tuton belum dimulai. Belum ada tugas atau diskusi baru yang masuk ke sistem.");
-                } else {
-                    sendTelegramNotification("📭 Status Laporan: Tuton belum dimulai. Santai ae dulu bro");
-                }
-
             } else {
-                System.out.println("🚨 BINGO! Ditemukan " + eventsArray.length() + " Tugas!");
-                sendTelegramNotification("🚨 Alert! Ada " + eventsArray.length() + " Tugas/Diskusi pending di e-learning!");
-
-                // BONGKAR TUGAS DAN KIRIM RAPI KE NOTION
                 for (int i = 0; i < eventsArray.length(); i++) {
                     JSONObject event = eventsArray.getJSONObject(i);
-                    String namaTugas = event.getString("name");
-                    String namaMatkul = event.getJSONObject("course").getString("fullname");
+                    String taskId = String.valueOf(event.getInt("id"));
+                    
+                    if (!sentTasks.contains(taskId)) {
+                        newTasksCount++;
+                    }
+                }
 
-                    System.out.println("👉 Memproses: " + namaTugas + " | " + namaMatkul);
+                if (newTasksCount > 0) {
+                    System.out.println("🚨 BINGO! Ditemukan " + newTasksCount + " Tugas Baru!");
+                    sendTelegramNotification("🚨 Alert! Ada " + newTasksCount + " Tugas/Diskusi BARU di e-learning!");
 
-                    kirimNotionRapi(namaTugas, namaMatkul);
+                    // BONGKAR TUGAS DAN KIRIM RAPI KE NOTION
+                    for (int i = 0; i < eventsArray.length(); i++) {
+                        JSONObject event = eventsArray.getJSONObject(i);
+                        String taskId = String.valueOf(event.getInt("id"));
+
+                        if (!sentTasks.contains(taskId)) {
+                            String namaTugas = event.getString("name");
+                            String namaMatkul = event.getJSONObject("course").getString("fullname");
+
+                            System.out.println("👉 Memproses: " + namaTugas + " | " + namaMatkul);
+
+                            kirimNotionRapi(namaTugas, namaMatkul);
+                            saveTaskToHistory(taskId);
+                        }
+                    }
+                } else {
+                    System.out.println("💤 Memang ada " + eventsArray.length() + " Tugas pending, tapi semuanya sudah pernah diteruskan. Tidak perlu diulangi.");
                 }
             }
         } catch (Exception e) {
@@ -159,33 +199,42 @@ public class App {
 
             if  (notionToken == null || databaseId == null) return;
 
-            // Bersihin tanda kutip biar format JSON gak rusak
-            namaTugas = namaTugas.replace("\"", "\\\"");
-            namaMatkul = namaMatkul.replace("\"", "\\\"");
+            // AMAN DARI ERROR: Gunakan JSONObject agar otomatis sanitize karakter aneh
+            JSONObject jsonBody = new JSONObject();
+            JSONObject parent = new JSONObject();
+            parent.put("database_id", databaseId);
+            jsonBody.put("parent", parent);
 
-            // INI MAGIC-NYA: Kita masukin ke kolom Name dan Mata Kuliah
-            String jsonData = "{"
-                    + "\"parent\": { \"database_id\": \"" + databaseId + "\" },"
-                    + "\"properties\": {"
-                    + "  \"Name\": {"
-                    + "    \"title\": [ { \"text\": { \"content\": \"" + namaTugas + "\" } } ]"
-                    + "  },"
-                    + "  \"Mata Kuliah\": {"
-                    + "    \"select\": { \"name\": \"" + namaMatkul + "\" }"
-                    + "  }"
-                    + "}"
-                    + "}";
+            JSONObject properties = new JSONObject();
 
-            HttpClient client = HttpClient.newHttpClient();
+            JSONObject nameProp = new JSONObject();
+            JSONArray titleArray = new JSONArray();
+            JSONObject titleContent = new JSONObject();
+            JSONObject textObj = new JSONObject();
+            textObj.put("content", namaTugas);
+            titleContent.put("text", textObj);
+            titleArray.put(titleContent);
+            nameProp.put("title", titleArray);
+
+            JSONObject matkulProp = new JSONObject();
+            JSONObject selectObj = new JSONObject();
+            selectObj.put("name", namaMatkul);
+            matkulProp.put("select", selectObj);
+
+            properties.put("Name", nameProp);
+            properties.put("Mata Kuliah", matkulProp);
+
+            jsonBody.put("properties", properties);
+
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create("https://api.notion.com/v1/pages"))
                     .header("Authorization", "Bearer " + notionToken)
                     .header("Content-Type", "application/json")
                     .header("Notion-Version", "2022-06-28")
-                    .POST(HttpRequest.BodyPublishers.ofString(jsonData))
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody.toString()))
                     .build();
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() == 200) {
                 System.out.println("✅ Sukses nulis ke Notion: " + namaTugas);
