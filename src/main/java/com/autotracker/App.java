@@ -4,12 +4,6 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
-import java.util.HashSet;
-import java.util.Set;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import io.github.cdimascio.dotenv.Dotenv;
@@ -22,26 +16,6 @@ public class App {
     // Optimasi: HttpClient digunakan ulang (thread-safe)
     private static final HttpClient httpClient = HttpClient.newHttpClient();
     private static final String BASE_URL = "https://elearning.ut.ac.id";
-    private static final Path HISTORY_FILE = Paths.get("sent_tasks.txt");
-
-    private static Set<String> loadSentTasks() {
-        try {
-            if (Files.exists(HISTORY_FILE)) {
-                return new HashSet<>(Files.readAllLines(HISTORY_FILE));
-            }
-        } catch (Exception e) {
-            System.out.println("⚠️ Gagal membaca history tugas: " + e.getMessage());
-        }
-        return new HashSet<>();
-    }
-
-    private static void saveTaskToHistory(String taskId) {
-        try {
-            Files.write(HISTORY_FILE, (taskId + System.lineSeparator()).getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-        } catch (Exception e) {
-            System.out.println("⚠️ Gagal menyimpan history: " + e.getMessage());
-        }
-    }
 
     public static void sendTelegramNotification(String message) {
         try {
@@ -138,6 +112,46 @@ public class App {
         }
     }
 
+    /**
+     * Cek ke Notion apakah tugas dengan nama ini sudah pernah dicatat.
+     * Ini adalah state management yang persistent — aman dipakai di GitHub Actions.
+     */
+    private static boolean sudahAdaDiNotion(String namaTugas) {
+        try {
+            String notionToken = dotenv.get("NOTION_TOKEN");
+            String databaseId = dotenv.get("NOTION_DATABASE_ID");
+            if (notionToken == null || databaseId == null) return false;
+
+            // Query Notion: cari page dengan title == namaTugas
+            JSONObject filter = new JSONObject();
+            JSONObject condition = new JSONObject();
+            JSONObject titleFilter = new JSONObject();
+            titleFilter.put("equals", namaTugas);
+            condition.put("property", "Name");
+            condition.put("title", titleFilter);
+            filter.put("filter", condition);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.notion.com/v1/databases/" + databaseId + "/query"))
+                    .header("Authorization", "Bearer " + notionToken)
+                    .header("Content-Type", "application/json")
+                    .header("Notion-Version", "2022-06-28")
+                    .POST(HttpRequest.BodyPublishers.ofString(filter.toString()))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            JSONObject hasil = new JSONObject(response.body());
+
+            // Kalau results-nya tidak kosong, berarti tugas ini sudah ada
+            return hasil.getJSONArray("results").length() > 0;
+
+        } catch (Exception e) {
+            System.out.println("⚠️ Gagal query Notion: " + e.getMessage());
+            // Kalau gagal query, anggap belum ada agar tidak ada yang terlewat
+            return false;
+        }
+    }
+
     private static void cekTugasPending(String token, int jumlahMatkul) {
         String urlCalendar = BASE_URL + "/webservice/rest/server.php?wstoken=" + token + "&wsfunction=core_calendar_get_action_events_by_timesort&moodlewsrestformat=json";
 
@@ -148,43 +162,33 @@ public class App {
 
             JSONObject jsonResponse = new JSONObject(response.body());
             JSONArray eventsArray = jsonResponse.getJSONArray("events");
-            
-            Set<String> sentTasks = loadSentTasks();
             int newTasksCount = 0;
 
             if (eventsArray.isEmpty()) {
                 System.out.println("📭 Radar Kosong. Belum ada tugas/diskusi baru.");
             } else {
+                System.out.println("🔍 Ditemukan " + eventsArray.length() + " event. Mengecek duplikasi ke Notion...");
+
                 for (int i = 0; i < eventsArray.length(); i++) {
                     JSONObject event = eventsArray.getJSONObject(i);
-                    String taskId = String.valueOf(event.getInt("id"));
-                    
-                    if (!sentTasks.contains(taskId)) {
-                        newTasksCount++;
+                    String namaTugas = event.getString("name");
+                    String namaMatkul = event.getJSONObject("course").getString("fullname");
+
+                    if (sudahAdaDiNotion(namaTugas)) {
+                        System.out.println("⏭️ Skip (sudah ada di Notion): " + namaTugas);
+                        continue;
                     }
+
+                    // Tugas baru! Catat dan kirim notif
+                    newTasksCount++;
+                    System.out.println("👉 Tugas BARU! Memproses: " + namaTugas + " | " + namaMatkul);
+                    kirimNotionRapi(namaTugas, namaMatkul);
                 }
 
                 if (newTasksCount > 0) {
-                    System.out.println("🚨 BINGO! Ditemukan " + newTasksCount + " Tugas Baru!");
-                    sendTelegramNotification("🚨 Alert! Ada " + newTasksCount + " Tugas/Diskusi BARU di e-learning!");
-
-                    // BONGKAR TUGAS DAN KIRIM RAPI KE NOTION
-                    for (int i = 0; i < eventsArray.length(); i++) {
-                        JSONObject event = eventsArray.getJSONObject(i);
-                        String taskId = String.valueOf(event.getInt("id"));
-
-                        if (!sentTasks.contains(taskId)) {
-                            String namaTugas = event.getString("name");
-                            String namaMatkul = event.getJSONObject("course").getString("fullname");
-
-                            System.out.println("👉 Memproses: " + namaTugas + " | " + namaMatkul);
-
-                            kirimNotionRapi(namaTugas, namaMatkul);
-                            saveTaskToHistory(taskId);
-                        }
-                    }
+                    sendTelegramNotification("🚨 Alert! Ada " + newTasksCount + " Tugas/Diskusi BARU di e-learning! Cek Notion kamu.");
                 } else {
-                    System.out.println("💤 Memang ada " + eventsArray.length() + " Tugas pending, tapi semuanya sudah pernah diteruskan. Tidak perlu diulangi.");
+                    System.out.println("💤 Semua tugas sudah tercatat di Notion sebelumnya. Tidak ada yang baru.");
                 }
             }
         } catch (Exception e) {
