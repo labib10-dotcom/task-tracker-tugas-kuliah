@@ -42,7 +42,6 @@ public class App {
     }
 
     public static void main(String[] args) {
-        sendTelegramNotification("Halo bro! Bot Tracker UT udah berhasil nyala! 🚀");
         System.out.println("\n⏳ [" + java.time.LocalTime.now() + "] Bot bangun! Mengecek e-learning...");
 
         String token = getUtToken();
@@ -100,10 +99,30 @@ public class App {
             JSONArray matkulArray = new JSONArray(response.body());
 
             int jumlah = matkulArray.length();
+            int matkulBaru = 0;
 
             if (jumlah > 0) {
-                System.out.println("📋 Radar 1: Ada " + matkulArray.length() + " Matkul.");
-                sendTelegramNotification("📚 Info! Mata Kuliah: ditemukan ada " + matkulArray.length() + " mata kuliah baru telah aktif di e-learning UT!");
+                System.out.println("📋 Radar 1: Ada " + jumlah + " Matkul. Mengecek matkul baru ke Notion...");
+
+                for (int i = 0; i < matkulArray.length(); i++) {
+                    JSONObject matkul = matkulArray.getJSONObject(i);
+                    String namaMatkul = matkul.getString("fullname");
+                    // Pakai prefix khusus agar tidak bentrok dengan nama tugas di Notion
+                    String penanda = "[MATKUL] " + namaMatkul;
+
+                    if (!sudahAdaDiNotion(penanda)) {
+                        matkulBaru++;
+                        System.out.println("🆕 Matkul BARU terdeteksi: " + namaMatkul);
+                        // Simpan penanda ke Notion agar run berikutnya tidak kirim lagi
+                        kirimNotionRapi(penanda, namaMatkul);
+                    } else {
+                        System.out.println("⏭️ Skip matkul (sudah tercatat): " + namaMatkul);
+                    }
+                }
+
+                if (matkulBaru > 0) {
+                    sendTelegramNotification("📚 Semester Baru! Ada " + matkulBaru + " mata kuliah baru aktif di e-learning UT! Cek Notion kamu.");
+                }
             }
             return jumlah;
         } catch (Exception e) {
