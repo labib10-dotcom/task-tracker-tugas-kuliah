@@ -254,11 +254,19 @@ public class App {
                 for (int d = 0; d < discussions.length(); d++) {
                     JSONObject discussion = discussions.getJSONObject(d);
                     String namaDiskusi = discussion.getString("name");
+
+                    // Filter: hanya proses forum yang relevan (Diskusi, Kehadiran, Tugas)
+                    if (!isForumRelevan(namaDiskusi)) {
+                        System.out.println("🚫 Dilewati (bukan forum tuton): " + namaDiskusi);
+                        continue;
+                    }
+
                     // Pakai prefix agar tidak bentrok dengan nama tugas di Notion
                     String penanda = "[DISKUSI] " + namaDiskusi;
 
-                    if (sudahAdaDiNotion(penanda)) {
-                        System.out.println("⏭️  Skip diskusi: " + namaDiskusi);
+                    // Cek dengan Name + Mata Kuliah agar Diskusi.1 dari matkul berbeda tidak saling skip
+                    if (sudahAdaDiNotion(penanda, namaMatkul)) {
+                        System.out.println("⏭️  Skip diskusi: " + namaDiskusi + " | " + namaMatkul);
                         continue;
                     }
 
@@ -284,8 +292,19 @@ public class App {
     // ==========================================
 
     /**
+     * Filter: hanya ambil forum yang relevan untuk perkuliahan UT.
+     * Hanya Diskusi.X, Kehadiran, dan Tugas yang perlu ditrack.
+     */
+    private static boolean isForumRelevan(String namaForum) {
+        String lower = namaForum.toLowerCase();
+        return lower.startsWith("diskusi") ||
+               lower.startsWith("kehadiran") ||
+               lower.startsWith("tugas");
+    }
+
+    /**
      * Cek ke Notion apakah entri dengan nama ini sudah pernah dicatat.
-     * Persistent state — aman dipakai di GitHub Actions (tidak bergantung file lokal).
+     * Persistent state — aman dipakai di GitHub Actions.
      */
     private static boolean sudahAdaDiNotion(String nama) {
         try {
@@ -316,6 +335,56 @@ public class App {
         } catch (Exception e) {
             System.out.println("⚠️ Gagal query Notion: " + e.getMessage());
             return false; // Anggap belum ada agar tidak terlewat
+        }
+    }
+
+    /**
+     * Overload: cek berdasarkan Name DAN Mata Kuliah sekaligus.
+     * Dipakai untuk diskusi agar "Diskusi.1" dari matkul berbeda tidak saling skip.
+     */
+    private static boolean sudahAdaDiNotion(String nama, String namaMatkul) {
+        try {
+            String notionToken = dotenv.get("NOTION_TOKEN");
+            String databaseId = dotenv.get("NOTION_DATABASE_ID");
+            if (notionToken == null || databaseId == null) return false;
+
+            JSONObject nameCondition = new JSONObject();
+            JSONObject nameTitleFilter = new JSONObject();
+            nameTitleFilter.put("equals", nama);
+            nameCondition.put("property", "Name");
+            nameCondition.put("title", nameTitleFilter);
+
+            JSONObject matkulCondition = new JSONObject();
+            JSONObject matkulSelectFilter = new JSONObject();
+            matkulSelectFilter.put("equals", namaMatkul);
+            matkulCondition.put("property", "Mata Kuliah");
+            matkulCondition.put("select", matkulSelectFilter);
+
+            JSONArray andArray = new JSONArray();
+            andArray.put(nameCondition);
+            andArray.put(matkulCondition);
+
+            JSONObject andFilter = new JSONObject();
+            andFilter.put("and", andArray);
+
+            JSONObject body = new JSONObject();
+            body.put("filter", andFilter);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.notion.com/v1/databases/" + databaseId + "/query"))
+                    .header("Authorization", "Bearer " + notionToken)
+                    .header("Content-Type", "application/json")
+                    .header("Notion-Version", "2022-06-28")
+                    .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            JSONObject hasil = new JSONObject(response.body());
+            return hasil.getJSONArray("results").length() > 0;
+
+        } catch (Exception e) {
+            System.out.println("⚠️ Gagal query Notion (2-param): " + e.getMessage());
+            return false;
         }
     }
 
