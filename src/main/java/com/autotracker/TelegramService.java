@@ -1,0 +1,40 @@
+package com.autotracker;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import io.github.cdimascio.dotenv.Dotenv;
+import org.json.JSONObject;
+
+/**
+ * Pengiriman notifikasi ke Telegram Bot.
+ */
+public class TelegramService {
+
+    private static final Dotenv dotenv = Dotenv.load();
+    private static final HttpClient httpClient = HttpClient.newHttpClient();
+
+    /** Kirim pesan teks ke Telegram chat yang dikonfigurasi di .env */
+    public static void kirim(String message) {
+        try {
+            String botToken = dotenv.get("TELEGRAM_BOT_TOKEN");
+            String chatId = dotenv.get("TELEGRAM_CHAT_ID");
+            if (botToken == null || chatId == null) return;
+
+            JSONObject body = new JSONObject();
+            body.put("chat_id", chatId);
+            body.put("text", message);
+
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.telegram.org/bot" + botToken + "/sendMessage"))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+                    .build();
+
+            httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        } catch (Exception e) {
+            System.out.println("🚨 Error Telegram: " + e.getMessage());
+        }
+    }
+}
