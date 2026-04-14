@@ -131,7 +131,7 @@ public class MoodleService {
 
     /**
      * Cek apakah user sudah pernah membalas/berpartisipasi di suatu diskusi.
-     * Dipakai untuk menentukan status pengerjaan di Notion.
+     * Dipakai sebagai FALLBACK jika cmid forum tidak tersedia.
      */
     public static boolean sudahBerpartisipasi(String token, int discussionId, int userId) {
         String url = BASE_URL + "/webservice/rest/server.php?wstoken=" + token
@@ -146,7 +146,6 @@ public class MoodleService {
 
             JSONArray posts = json.getJSONArray("posts");
             for (int i = 0; i < posts.length(); i++) {
-                // Jika ada post dari userId ini, berarti user sudah berpartisipasi
                 if (posts.getJSONObject(i).getInt("userid") == userId) {
                     return true;
                 }
@@ -155,5 +154,36 @@ public class MoodleService {
             System.out.println("⚠️ Gagal cek partisipasi diskusi " + discussionId + ": " + e.getMessage());
         }
         return false;
+    }
+
+    /**
+     * Ambil completion status semua aktivitas di satu course.
+     * Ini adalah sumber data yang SAMA dengan tanda hijau "✓ Done" di UI Moodle.
+     *
+     * Return: Map dari cmid -> state (0=belum selesai, 1=selesai, 2=pass, 3=fail)
+     * cmid adalah ID course module — tiap forum punya cmid sendiri.
+     */
+    public static Map<Integer, Integer> getCompletionStatus(String token, int courseId, int userId) {
+        Map<Integer, Integer> completionMap = new HashMap<>();
+        String url = BASE_URL + "/webservice/rest/server.php?wstoken=" + token
+                + "&wsfunction=core_completion_get_activities_completion_status"
+                + "&moodlewsrestformat=json"
+                + "&courseid=" + courseId
+                + "&userid=" + userId;
+        try {
+            HttpRequest req = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
+            HttpResponse<String> res = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            JSONObject json = new JSONObject(res.body());
+            if (!json.has("statuses")) return completionMap;
+
+            JSONArray statuses = json.getJSONArray("statuses");
+            for (int i = 0; i < statuses.length(); i++) {
+                JSONObject s = statuses.getJSONObject(i);
+                completionMap.put(s.getInt("cmid"), s.getInt("state"));
+            }
+        } catch (Exception e) {
+            System.out.println("⚠️ Gagal ambil completion status course " + courseId + ": " + e.getMessage());
+        }
+        return completionMap;
     }
 }

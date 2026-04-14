@@ -3,6 +3,7 @@ package com.autotracker;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -159,12 +160,34 @@ public class App {
                 return;
             }
 
+            // Bangun completion map SEKALI per course (ebih efisien + sumber data = tanda hijau Done di Moodle)
+            System.out.println("🔄 Memuat Activity Completion status dari Moodle...");
+            Map<Integer, Map<Integer, Integer>> completionByCourse = new HashMap<>();
+            for (int i = 0; i < daftarMatkul.length(); i++) {
+                int courseId = daftarMatkul.getJSONObject(i).getInt("id");
+                completionByCourse.put(courseId, MoodleService.getCompletionStatus(token, courseId, userId));
+            }
+
             System.out.println("📂 Ditemukan " + forums.length() + " forum. Mengecek diskusi...");
             for (int f = 0; f < forums.length(); f++) {
                 JSONObject forum = forums.getJSONObject(f);
                 int forumId = forum.getInt("id");
                 int courseId = forum.getInt("course");
+                int cmid = forum.optInt("cmid", -1); // ID course module untuk lookup completion
                 String namaMatkul = courseMap.getOrDefault(courseId, "Matkul Tidak Diketahui");
+
+                // Tentukan status selesai via Moodle completion (= tanda hijau Done di UI)
+                // State: 0=belum, 1=selesai, 2=selesai(pass), 3=selesai(fail)
+                boolean sudahDikerjakan;
+                if (cmid != -1) {
+                    Map<Integer, Integer> completionMap = completionByCourse.getOrDefault(courseId, new HashMap<>());
+                    int state = completionMap.getOrDefault(cmid, 0);
+                    sudahDikerjakan = state >= 1;
+                    System.out.println("🔍 Forum '" + forum.optString("name", "?") + "' completion state: " + state);
+                } else {
+                    // Fallback: cek via posts jika cmid tidak tersedia
+                    sudahDikerjakan = false; // akan di-resolve per discussion di bawah
+                }
 
                 JSONArray discussions = MoodleService.getForumDiscussions(token, forumId);
                 for (int d = 0; d < discussions.length(); d++) {
@@ -172,20 +195,20 @@ public class App {
                     String namaDiskusi = disc.getString("name");
                     int discussionId = disc.getInt("id");
 
-                    // Filter: hanya Diskusi.X, Kehadiran, dan Tugas
                     if (!MoodleService.isForumRelevan(namaDiskusi)) {
                         System.out.println("🚫 Skip (tidak relevan): " + namaDiskusi);
                         continue;
                     }
 
+                    // Jika cmid tidak tersedia, fallback ke cek posts
+                    boolean finalSelesai = (cmid != -1)
+                            ? sudahDikerjakan
+                            : MoodleService.sudahBerpartisipasi(token, discussionId, userId);
+
                     String penanda = "[DISKUSI] " + namaDiskusi;
 
-                    // Cek apakah user sudah berpartisipasi di diskusi ini
-                    boolean sudahDikerjakan = MoodleService.sudahBerpartisipasi(token, discussionId, userId);
-
                     if (NotionService.sudahAda(penanda, namaMatkul)) {
-                        // Sudah tercatat di Notion — cek apakah perlu update status ke Selesai
-                        if (sudahDikerjakan) {
+                        if (finalSelesai) {
                             String pageId = NotionService.getPageId(penanda, namaMatkul);
                             if (pageId != null) {
                                 NotionService.tandaiSelesai(pageId);
@@ -193,21 +216,19 @@ public class App {
                                 System.out.println("✅ Diupdate ke Selesai: " + namaDiskusi + " | " + namaMatkul);
                             }
                         } else {
-                            System.out.println("⏭️  Belum dikerjakan, sudah di Notion: " + namaDiskusi);
+                            System.out.println("⏭️  Belum dikerjakan: " + namaDiskusi + " | " + namaMatkul);
                         }
                         continue;
                     }
 
-                    // Belum ada di Notion sama sekali
-                    if (sudahDikerjakan) {
-                        // Sudah dikerjakan tapi belum tercatat — simpan langsung sebagai Selesai
-                        System.out.println("✅ Sudah dikerjakan, simpan sebagai Selesai: " + namaDiskusi);
+                    // Belum ada di Notion
+                    if (finalSelesai) {
+                        System.out.println("✅ Sudah selesai, simpan sebagai Selesai: " + namaDiskusi);
                         String pageId = NotionService.simpanDanAmbilId(penanda, namaMatkul);
                         if (pageId != null) NotionService.tandaiSelesai(pageId);
                     } else {
-                        // Diskusi baru dan belum dikerjakan — notif!
                         diskusiBaru.add(namaDiskusi + "\n   📚 " + namaMatkul);
-                        System.out.println("💬 Diskusi BARU: " + namaDiskusi + " | " + namaMatkul);
+                        System.out.println("💬 Diskusi BARU (belum dikerjakan): " + namaDiskusi + " | " + namaMatkul);
                         NotionService.simpan(penanda, namaMatkul);
                     }
                 }
