@@ -1,45 +1,199 @@
-# 🚀 Auto Tracker Tugas - Universitas Terbuka
+# 🎓 UT Academic Tracker Bot
 
-Bot otomatis berbasis Java untuk memantau pembaruan tugas dan aktivitas di portal e-learning Universitas Terbuka secara berkala.
+Bot otomatis berbasis **Java** yang memantau aktivitas e-learning **Universitas Terbuka** secara berkala. Berjalan sepenuhnya di **GitHub Actions** — gratis, tanpa server, tanpa perlu buka laptop.
 
-## ✨ Fitur Utama
-- **Auto Check:** Mengecek tugas secara otomatis dalam interval waktu tertentu (default: 6 jam).
-- **Secure Credentials:** Menggunakan sistem `.env` untuk menjaga keamanan NIM dan Password.
-- **Background Process:** Menggunakan `ScheduledExecutorService` agar berjalan efisien di background.
+---
 
-## 🛠️ Teknologi yang Digunakan
-- **Java 25** (OpenJDK)
-- **Maven** (Project Management)
-- **Dotenv-Java** (Environment Variables)
-- **Java HttpClient** (API Connection)
+## ✨ Fitur
 
-## 🚀 Cara Penggunaan
+| Fitur | Keterangan |
+|---|---|
+| 📋 Deteksi Matkul Baru | Notif Telegram saat semester baru & matkul aktif |
+| 📡 Pantau Tugas & Kuis | Ambil dari Moodle Calendar API per-course |
+| 💬 Pantau Diskusi Forum | Filter hanya Diskusi, Kehadiran & Tugas yang relevan |
+| ✅ Deteksi Sudah Dikerjakan | Baca tanda hijau "Done" langsung dari Activity Completion Moodle |
+| 📊 Laporan Periodik | Reminder ke Telegram setiap run — daftar diskusi yang belum selesai |
+| 🔁 Anti-Duplikasi | State management via Notion, aman di environment ephemeral GitHub Actions |
 
-1. **Clone Repository ini:**
-   ```bash
-   git clone [https://github.com/username-kamu/task-tracker.git](https://github.com/username-kamu/task-tracker.git)
+---
 
-2. **SetUp & Konfigurasi:**
-   Agar bot bisa login ke e-learning, Anda perlu menyiapkan kredensial:
+## 🏗️ Arsitektur
 
-- Copy file .env.example dan ubah namanya menjadi .env.
+```
+task-tracker/
+├── .github/
+│   └── workflows/
+│       └── jadwal-bot.yml      # Jadwal otomatis (setiap 6 jam)
+├── src/main/java/com/autotracker/
+│   ├── App.java                # Main + orchestration 3 pengecekan
+│   ├── MoodleService.java      # Semua API e-learning Moodle UT
+│   ├── NotionService.java      # Semua API Notion (state management)
+│   └── TelegramService.java    # Kirim notifikasi Telegram
+├── .env.example                # Template variabel lingkungan
+├── .gitignore                  # .env diabaikan Git
+└── pom.xml                     # Maven dependencies
+```
 
-- Buka file .env tersebut, lalu masukkan NIM dan Password UT Anda:
+---
 
-    **Plaintext**
-    ```bash
-    UT_NIM=123456789
-    UT_PASS=password_anda
+## 🔄 Alur Kerja Bot
 
-- Catatan: File .env ini aman dan tidak akan ter-upload ke GitHub karena sudah terdaftar di .ignore.
+```
+GitHub Actions (tiap 6 jam)
+        │
+        ▼
+   Login Moodle → Ambil Token & User ID
+        │
+        ▼
+   Ambil Daftar Matkul
+        │
+        ├─ [CEK 1] Matkul Baru?
+        │          └─ Ya → Simpan Notion + Notif Telegram
+        │
+        ├─ [CEK 2] Tugas/Kuis Baru? (Calendar API)
+        │          └─ Ya → Simpan Notion + Notif Telegram
+        │
+        ├─ [CEK 3] Diskusi Forum? (Forum API + Completion API)
+        │          ├─ Baru + Belum dikerjakan → Simpan Notion + Notif Telegram
+        │          ├─ Sudah ada + Baru selesai → Update Notion → "Selesai" ✅
+        │          └─ Sudah dikerjakan tapi baru masuk → Simpan langsung sebagai Selesai
+        │
+        └─ [LAPORAN] Kirim ringkasan ke Telegram
+                   └─ Daftar diskusi yang masih belum dikerjakan (dari Notion)
+```
 
-3. **Build & Run:**
-- Buka folder task-tracker di IntelliJ IDEA.
+---
 
-- Tunggu IntelliJ mendownload dependencies Maven secara otomatis.
+## ⚙️ Setup & Instalasi
 
-- Klik kanan pada file src/main/java/com/autotracker/App.java.
+### 1. Fork / Clone Repositori
 
-- Pilih Run 'App.main()'.
+```bash
+git clone https://github.com/username-kamu/task-tracker.git
+cd task-tracker
+```
 
-- Pantau log di terminal untuk melihat aktivitas bot.
+### 2. Buat Database di Notion
+
+Buat database Notion baru dengan kolom / property berikut:
+
+| Property Name | Tipe |
+|---|---|
+| `Name` | Title |
+| `Mata Kuliah` | Select |
+| `Status` | **Status** (bukan Select!) |
+
+> ⚠️ **Penting**: Property `Status` harus bertipe **Status** (bawaan Notion), dan wajib ada opsi bernama **`Selesai`** di grup "Done".
+
+### 3. Buat Notion Integration
+
+1. Buka [notion.so/my-integrations](https://www.notion.so/my-integrations)
+2. Klik **"New integration"** → beri nama → Submit
+3. Copy **Internal Integration Token** → simpan sebagai `NOTION_TOKEN`
+4. Buka database Notion kamu → klik **"..."** → **"Connections"** → tambahkan integration tadi
+5. Copy ID database dari URL: `notion.so/{DATABASE_ID}?v=...` → simpan sebagai `NOTION_DATABASE_ID`
+
+### 4. Buat Telegram Bot
+
+1. Chat [@BotFather](https://t.me/BotFather) → `/newbot`
+2. Ikuti instruksi → dapatkan **Bot Token** → simpan sebagai `TELEGRAM_BOT_TOKEN`
+3. Kirim pesan ke bot kamu, lalu buka `https://api.telegram.org/bot<TOKEN>/getUpdates`
+4. Copy `chat.id` dari response → simpan sebagai `TELEGRAM_CHAT_ID`
+
+### 5. Set GitHub Secrets
+
+Di repositori GitHub: **Settings → Secrets and variables → Actions → New repository secret**
+
+| Secret Name | Nilai |
+|---|---|
+| `UT_NIM` | Nomor Induk Mahasiswa UT |
+| `UT_PASS` | Password e-learning UT |
+| `TELEGRAM_BOT_TOKEN` | Token bot Telegram |
+| `TELEGRAM_CHAT_ID` | Chat ID Telegram kamu |
+| `NOTION_TOKEN` | Token integrasi Notion |
+| `NOTION_DATABASE_ID` | ID database Notion |
+
+### 6. Jalankan Bot
+
+Bot akan otomatis berjalan setiap **6 jam** sesuai jadwal di `jadwal-bot.yml`.
+
+Untuk menjalankan manual: **Actions → Auto Bot Tracker UT → Run workflow**
+
+---
+
+## 📱 Contoh Notifikasi Telegram
+
+**Diskusi Baru:**
+```
+💬 Ada 2 Diskusi BARU!
+
+• Diskusi.1
+   📚 Analisis dan Perancangan Sistem
+• Diskusi.1
+   📚 Perilaku Organisasi
+```
+
+**Laporan Periodik (setiap run):**
+```
+📊 Laporan Bot UT | 2026-04-14
+⏰ 09:00:00
+
+⏳ 2 Diskusi belum dikerjakan:
+
+• Diskusi.2
+   📚 Kewirausahaan di Era Digital
+• Kehadiran Sesi ke-2
+   📚 Proses Bisnis
+
+💡 Yuk segera dikerjain sebelum deadline!
+```
+
+---
+
+## 🗄️ Basis Data Notion
+
+Bot menggunakan Notion sebagai **persistent state** — pengganti file lokal yang tidak cocok di GitHub Actions (environment ephemeral).
+
+| Prefix di Notion | Artinya |
+|---|---|
+| `[MATKUL] Nama Matkul` | Mata kuliah yang sudah terdeteksi |
+| `[DISKUSI] Diskusi.1` | Diskusi forum yang sudah/belum dikerjakan |
+| *(tanpa prefix)* | Tugas / kuis dari calendar |
+
+---
+
+## 🛠️ Teknologi
+
+- **Java 21** + **Maven**
+- **Moodle Web Services API** (token-based)
+- **Notion API** v2022-06-28
+- **Telegram Bot API**
+- **GitHub Actions** (cron scheduler)
+- **dotenv-java** (manajemen environment variables)
+
+---
+
+## 🔒 Keamanan
+
+- File `.env` **tidak pernah** di-push ke GitHub (ada di `.gitignore`)
+- Semua kredensial dikelola via **GitHub Secrets**
+- Token yang sudah pernah bocor ke Git history harus di-regenerate
+
+---
+
+## 📋 Troubleshooting
+
+| Masalah | Kemungkinan Penyebab | Solusi |
+|---|---|---|
+| Bot tidak login | NIM/PASS salah | Cek GitHub Secret `UT_NIM` dan `UT_PASS` |
+| Notion error 401 | Token expired atau salah | Regenerate token di Notion Integrations |
+| Notion error 400 | Database ID salah | Cek `NOTION_DATABASE_ID` |
+| Status tidak update ke Selesai | Nama status bukan `Selesai` | Pastikan ada opsi `Selesai` di property Status |
+| Diskusi tidak terdeteksi | Nama forum tidak diawali Diskusi/Kehadiran/Tugas | Periksa nama forum di e-learning |
+| Tidak ada notif Telegram | Token atau Chat ID salah | Tes manual via Telegram API |
+
+---
+
+## 📝 Lisensi
+
+Proyek ini dibuat untuk keperluan pribadi mahasiswa Universitas Terbuka.
