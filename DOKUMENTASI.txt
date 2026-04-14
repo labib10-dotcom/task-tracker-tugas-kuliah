@@ -1,0 +1,268 @@
+===================================================================
+DOKUMENTASI TEKNIS - UT Academic Tracker Bot
+Versi: 4.0 | Terakhir diperbarui: 14 April 2026
+===================================================================
+
+STRUKTUR FILE PROYEK:
+  task-tracker/
+  ├── .github/workflows/jadwal-bot.yml  → Jadwal GitHub Actions (tiap 6 jam)
+  ├── src/main/java/com/autotracker/
+  │   ├── App.java                       → Main + orkestrasi semua pengecekan
+  │   ├── MoodleService.java             → Semua API Moodle UT
+  │   ├── NotionService.java             → Semua API Notion (state management)
+  │   ├── TelegramService.java           → Kirim notifikasi Telegram
+  │   ├── App.txt                        → Backup kode versi awal (v1)
+  │   └── DOKUMENTASI.txt               → File ini
+  ├── .env                               → Kredensial lokal (JANGAN di-push!)
+  ├── .env.example                       → Template .env
+  ├── .gitignore                         → .env diabaikan Git
+  ├── README.md                          → Dokumentasi publik (GitHub)
+  └── pom.xml                            → Maven dependencies
+
+===================================================================
+FITUR AKTIF (v4.0)
+===================================================================
+
+[CEK 1] MATKUL BARU
+  - API: core_enrol_get_users_courses
+  - Cek apakah matkul sudah ada di Notion (by Name)
+  - Simpan ke Notion dengan prefix [MATKUL]
+  - Notif Telegram hanya saat ada matkul baru (awal semester)
+
+[CEK 2] TUGAS & KUIS
+  - API: core_calendar_get_action_events_by_courses
+  - Filter timesortfrom = sekarang (tidak ambil event yang sudah lewat)
+  - Cek duplikat: Name + Mata Kuliah di Notion
+  - Notif Telegram jika ada tugas baru
+
+[CEK 3] DISKUSI FORUM
+  - API 1: mod_forum_get_forums_by_courses       → Ambil semua forum
+  - API 2: mod_forum_get_forum_discussions        → Ambil diskusi per forum
+  - API 3: core_completion_get_activities_completion_status → Status selesai
+  - Filter: hanya forum yang namanya diawali "diskusi", "kehadiran", atau "tugas"
+  - Completion status dibaca dari Activity Completion Moodle (= tanda hijau Done)
+  - Completion map dibangun SEKALI per course (efisien, bukan per diskusi)
+  - Fallback: mod_forum_get_discussion_posts jika cmid tidak tersedia
+
+  Decision matrix tiap diskusi:
+  ┌─────────────────────────────┬──────────────┬──────────────────────────────┐
+  │ Kondisi                     │ Di Notion?   │ Aksi                         │
+  ├─────────────────────────────┼──────────────┼──────────────────────────────┤
+  │ State >= 1 (Done di Moodle) │ Sudah ada    │ Update Notion → "Selesai" ✅ │
+  │ State = 0  (Belum)          │ Sudah ada    │ Skip (sudah dinotif)         │
+  │ State >= 1 (Done di Moodle) │ Belum ada    │ Simpan langsung sbg Selesai  │
+  │ State = 0  (Belum)          │ Belum ada    │ Simpan + Notif Telegram 🔔   │
+  └─────────────────────────────┴──────────────┴──────────────────────────────┘
+
+[LAPORAN] PERIODIK (selalu jalan tiap run)
+  - Query Notion: semua item dengan Name starts_with "[DISKUSI]"
+  - Filter di Java: hanya yang Status bukan "Selesai"
+  - Kirim ringkasan ke Telegram berisi daftar diskusi yang masih belum dikerjakan
+  - Fungsi: reminder rutin, bot tetap dirasakan aktif meski tidak ada perubahan
+
+===================================================================
+ANTI-DUPLIKASI (State Management)
+===================================================================
+
+Karena GitHub Actions bersifat ephemeral (file hilang setiap run),
+state disimpan permanen di Notion database.
+
+Method cek di NotionService:
+  sudahAda(nama)              → filter: Name == nama
+                                Dipakai untuk [MATKUL] (nama sudah unik global)
+
+  sudahAda(nama, namaMatkul)  → filter: Name == nama AND Mata Kuliah == namaMatkul
+                                Dipakai untuk [DISKUSI] dan tugas agar
+                                "Diskusi.1" dari matkul berbeda tidak
+                                saling di-skip satu sama lain
+
+===================================================================
+API MOODLE YANG DIGUNAKAN
+===================================================================
+
+1. TOKEN / LOGIN
+   GET /login/token.php
+       ?username={NIM}&password={PASS}&service=moodle_mobile_app
+   Response: { "token": "xxx" }
+
+2. SITE INFO / USER ID
+   GET /webservice/rest/server.php
+       ?wsfunction=core_webservice_get_site_info&wstoken={TOKEN}&moodlewsrestformat=json
+   Response: { "userid": 12345, ... }
+
+3. DAFTAR MATKUL
+   GET /webservice/rest/server.php
+       ?wsfunction=core_enrol_get_users_courses&userid={ID}&wstoken={TOKEN}&moodlewsrestformat=json
+   Response: [ { "id": courseId, "fullname": "Nama Matkul", ... } ]
+
+4. CALENDAR EVENTS (tugas/kuis)
+   GET /webservice/rest/server.php
+       ?wsfunction=core_calendar_get_action_events_by_courses
+       &timesortfrom={UNIX_TIMESTAMP}
+       &courseids[0]={ID}&courseids[1]={ID}...
+   Response: { "events": [ { "name": "Tugas 1", "course": { "id": ... } } ] }
+
+5. FORUM LIST
+   GET /webservice/rest/server.php
+       ?wsfunction=mod_forum_get_forums_by_courses
+       &courseids[0]={ID}&courseids[1]={ID}...
+   Response: [ { "id": forumId, "cmid": courseModuleId, "course": courseId, "name": "..." } ]
+   NOTE: "cmid" = Course Module ID, unik per aktivitas, kunci untuk completion lookup
+
+6. DISKUSI PER FORUM
+   GET /webservice/rest/server.php
+       ?wsfunction=mod_forum_get_forum_discussions&forumid={ID}&wstoken={TOKEN}&moodlewsrestformat=json
+   Response: { "discussions": [ { "id": discussionId, "name": "Diskusi.1" } ] }
+
+7. ACTIVITY COMPLETION STATUS ← KUNCI DETEKSI "SUDAH DIKERJAKAN"
+   GET /webservice/rest/server.php
+       ?wsfunction=core_completion_get_activities_completion_status
+       &courseid={ID}&userid={USER_ID}&wstoken={TOKEN}&moodlewsrestformat=json
+   Response: { "statuses": [ { "cmid": 123, "state": 1, ... } ] }
+   State values:
+     0 = Belum selesai
+     1 = Selesai (complete)
+     2 = Selesai dengan nilai lulus (complete pass)
+     3 = Selesai dengan nilai gagal (complete fail)
+   NOTE: Ini adalah sumber yang SAMA dengan tanda hijau "✓ Done" di UI Moodle
+
+8. POST DISKUSI (fallback)
+   GET /webservice/rest/server.php
+       ?wsfunction=mod_forum_get_discussion_posts&discussionid={ID}&wstoken={TOKEN}&moodlewsrestformat=json
+   Response: { "posts": [ { "userid": 12345, "message": "..." } ] }
+
+===================================================================
+API NOTION YANG DIGUNAKAN
+===================================================================
+
+1. QUERY DATABASE (cek duplikasi & ambil pending)
+   POST https://api.notion.com/v1/databases/{database_id}/query
+   Headers: Authorization, Content-Type, Notion-Version: 2022-06-28
+   Body: { "filter": { ... } }
+
+2. BUAT HALAMAN BARU
+   POST https://api.notion.com/v1/pages
+   Body: { "parent": { "database_id": "..." }, "properties": { "Name": {...}, "Mata Kuliah": {...} } }
+   Response includes: { "id": "page_id" }  ← disimpan untuk update status
+
+3. UPDATE HALAMAN (tandai Selesai)
+   PATCH https://api.notion.com/v1/pages/{page_id}
+   Body: { "properties": { "Status": { "status": { "name": "Selesai" } } } }
+   NOTE: Gunakan property type "status", bukan "select"
+
+===================================================================
+ENVIRONMENT VARIABLES
+===================================================================
+
+Variabel yang WAJIB ada (di .env lokal atau GitHub Secrets):
+
+  UT_NIM              Nomor Induk Mahasiswa UT
+  UT_PASS             Password e-learning UT
+  TELEGRAM_BOT_TOKEN  Token bot Telegram (dari @BotFather)
+  TELEGRAM_CHAT_ID    Chat ID tujuan notifikasi
+  NOTION_TOKEN        Notion Integration Token
+  NOTION_DATABASE_ID  ID database Notion
+
+===================================================================
+GITHUB ACTIONS WORKFLOW
+===================================================================
+
+File: .github/workflows/jadwal-bot.yml
+
+Jadwal: cron "0 */6 * * *" = setiap 6 jam sekali (00:00, 06:00, 12:00, 18:00 UTC)
+        Setara: 07:00, 13:00, 19:00, 01:00 WIB
+
+Trigger manual: Settings → Actions → "Auto Bot Tracker UT" → Run workflow
+
+Step yang dijalankan:
+  1. actions/checkout@v4         → Clone kode terbaru
+  2. actions/setup-java@v4       → Setup Java 21 (Temurin) + cache Maven
+  3. Bikin File .env             → Inject secrets ke file .env
+  4. mvn clean package           → Compile & build JAR
+  5. java -jar *-jar-with-dependencies.jar → Jalankan bot
+
+===================================================================
+STRUKTUR DATABASE NOTION
+===================================================================
+
+Property yang diperlukan:
+  Name       | Title  | Nama entri (dengan prefix)
+  Mata Kuliah| Select | Nama mata kuliah
+  Status     | Status | Status pengerjaan
+
+Nilai Status yang dipakai:
+  "Belum dimulai"  → Default saat entry baru dibuat
+  "Selesai"        → Di-update otomatis bot saat activity completion state >= 1
+
+Format prefix Name:
+  [MATKUL] Nama Matkul       → Mata kuliah aktif
+  [DISKUSI] Diskusi.1        → Diskusi forum
+  [DISKUSI] Kehadiran Sesi ke-1  → Forum kehadiran
+  Nama Tugas / Event         → Tugas dari calendar (tanpa prefix)
+
+===================================================================
+CATATAN PENTING & GOTCHA
+===================================================================
+
+1. FILE .env HARUS ADA DI .gitignore
+   Pastikan baris ".env" ada di .gitignore. Jika tidak, kredensial
+   bisa bocor ke GitHub history.
+
+2. PROPERTY STATUS DI NOTION HARUS TIPE "STATUS"
+   Bukan "Select". Jika pakai Select, PATCH request untuk update
+   status akan gagal karena format JSON berbeda.
+   - Status property: { "status": { "name": "Selesai" } }
+   - Select property: { "select": { "name": "Selesai" } }
+
+3. COMPLETION API MEMBUTUHKAN USER ID
+   core_completion_get_activities_completion_status memerlukan
+   userid parameter, bukan hanya token. Pastikan getUserId() berhasil.
+
+4. FORUM CMID MUNGKIN TIDAK ADA
+   Jika mod_forum_get_forums_by_courses tidak mengembalikan field "cmid",
+   bot otomatis fallback ke cek via mod_forum_get_discussion_posts.
+   Cek log "completion state" di GitHub Actions output untuk debug.
+
+5. NOTION TOKEN EXPIRED
+   Jika Notion error 401, generate ulang token di notion.so/my-integrations
+   dan update GitHub Secret NOTION_TOKEN.
+
+6. DUPLIKASI NOTIF TELEGRAM DARI MASA LALU
+   Jika ada entry di Notion dari sebelum perubahan ini, dan entry tersebut
+   tidak punya prefix [DISKUSI], maka diskusi dengan nama yang sama akan
+   dianggap baru dan dinotif lagi. Solve: hapus atau beri prefix manual.
+
+===================================================================
+RIWAYAT PERUBAHAN
+===================================================================
+
+[v1.0] - App.java (satu file)
+  - Login ke Moodle, ambil daftar matkul
+  - Kirim semua ke Notion & Telegram
+  - State management: file lokal sent_tasks.txt
+  - MASALAH: file tidak persisten di GitHub Actions (reset tiap run)
+  - Kode backup tersimpan di App.txt
+
+[v2.0] - App.java (refactoring)
+  - State management dipindah ke Notion API (sudahAdaDiNotion)
+  - JSON dibangun pakai JSONObject (hindari error karakter khusus)
+  - Satu HttpClient dipakai ulang (singleton, thread-safe)
+  - BASE_URL jadi konstanta
+  - Notif startup Telegram dihapus (spam)
+
+[v3.0] - Dipecah 4 file + Forum Diskusi
+  - Struktur: App.java, MoodleService.java, NotionService.java, TelegramService.java
+  - Tambah cekDiskusiBaru() via mod_forum_get_forums_by_courses
+  - Filter isForumRelevan(): hanya Diskusi/Kehadiran/Tugas
+  - Fix duplikasi: cek Name + Mata Kuliah (bukan Name saja)
+  - Notif Telegram format rapi dengan nama matkul per item
+
+[v4.0] - Completion API + Laporan Periodik
+  - Ganti sudahBerpartisipasi() (cek posts) →
+    getCompletionStatus() (Activity Completion API = tanda hijau Done)
+  - Completion map dibangun per-course (1 API call vs N API calls)
+  - getPageId() + tandaiSelesai(): update status Notion otomatis
+  - simpanDanAmbilId(): simpan page dan langsung dapatkan ID-nya
+  - Tambah kirimRingkasanPeriodik(): laporan ke Telegram setiap run
+  - Tambah getPendingDiskusi(): query Notion untuk item belum Selesai
+  - Format notif lebih informatif (nama matkul di setiap item)
