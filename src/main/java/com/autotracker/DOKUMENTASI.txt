@@ -1,0 +1,160 @@
+===================================================================
+DOKUMENTASI KODE - Bot Tracker e-Learning UT
+Versi terakhir diperbarui: 14 April 2026
+===================================================================
+
+STRUKTUR FILE:
+- App.java          → Main orchestration (CEK 1, 2, 3 + Laporan Periodik)
+- MoodleService.java → Semua API Moodle UT
+- NotionService.java → Semua API Notion (state management)
+- TelegramService.java → Kirim notifikasi Telegram
+
+===================================================================
+FITUR SAAT INI
+===================================================================
+
+1. [CEK 1] Matkul Baru
+   - Deteksi mata kuliah baru yang aktif di e-learning
+   - Simpan ke Notion dengan prefix [MATKUL]
+   - Notif Telegram hanya sekali di awal semester
+
+2. [CEK 2] Tugas & Kuis
+   - Gunakan API: core_calendar_get_action_events_by_courses
+   - Parameter timesortfrom = sekarang (tidak ambil event lama)
+   - Cek duplikat per Name + Mata Kuliah di Notion
+   - Notif Telegram jika ada tugas baru
+
+3. [CEK 3] Diskusi Forum
+   - Ambil semua forum via: mod_forum_get_forums_by_courses
+   - Filter hanya forum relevan: dimulai dengan "diskusi", "kehadiran", "tugas"
+   - Cek partisipasi user via: mod_forum_get_discussion_posts
+   - Simpan ke Notion dengan prefix [DISKUSI]
+   - Cek duplikat per Name + Mata Kuliah (bukan Name saja)
+   - Update status Notion ke "Selesai" otomatis jika user sudah berpartisipasi
+   - Notif Telegram jika ada diskusi baru yang belum dikerjakan
+
+4. [LAPORAN] Periodik (selalu jalan tiap run)
+   - Query Notion: semua [DISKUSI] yang statusnya bukan "Selesai"
+   - Kirim ringkasan ke Telegram setiap run
+   - Format pesan:
+       📊 Laporan Bot UT | 2026-04-14
+       ⏰ 09:00:00
+       ⏳ 3 Diskusi belum dikerjakan:
+       • Diskusi.1
+          📚 Analisis dan Perancangan Sistem
+       • Diskusi.1
+          📚 Perilaku Organisasi
+       💡 Yuk segera dikerjain sebelum deadline!
+
+===================================================================
+LOGIKA ANTI-DUPLIKASI (State Management)
+===================================================================
+
+Karena berjalan di GitHub Actions (ephemeral), state disimpan di Notion:
+
+- sudahAda(nama)              → cek Name saja (untuk [MATKUL])
+- sudahAda(nama, namaMatkul)  → cek Name + Mata Kuliah (untuk [DISKUSI], tugas)
+
+Decision matrix tiap diskusi saat bot run:
++---------------------------+--------------------+---------------------------+
+| Kondisi                   | Di Notion?         | Aksi                      |
++---------------------------+--------------------+---------------------------+
+| Sudah dikerjakan          | Sudah ada          | Update Notion → Selesai   |
+| Belum dikerjakan          | Sudah ada          | Skip                      |
+| Sudah dikerjakan          | Belum ada          | Simpan sebagai Selesai    |
+| Belum dikerjakan          | Belum ada          | Simpan + Notif Telegram   |
++---------------------------+--------------------+---------------------------+
+
+===================================================================
+API MOODLE YANG DIGUNAKAN
+===================================================================
+
+1. Login / Token:
+   GET /login/token.php?username=NIM&password=PASS&service=moodle_mobile_app
+
+2. Site Info / User ID:
+   GET /webservice/rest/server.php?wsfunction=core_webservice_get_site_info
+
+3. Daftar Matkul:
+   GET /webservice/rest/server.php?wsfunction=core_enrol_get_users_courses&userid=X
+
+4. Calendar Events (Tugas/Kuis):
+   GET /webservice/rest/server.php?wsfunction=core_calendar_get_action_events_by_courses
+       &timesortfrom=UNIX_TIMESTAMP
+       &courseids[0]=X&courseids[1]=Y...
+
+5. Daftar Forum:
+   GET /webservice/rest/server.php?wsfunction=mod_forum_get_forums_by_courses
+       &courseids[0]=X...
+
+6. Diskusi per Forum:
+   GET /webservice/rest/server.php?wsfunction=mod_forum_get_forum_discussions&forumid=X
+
+7. Cek Partisipasi User:
+   GET /webservice/rest/server.php?wsfunction=mod_forum_get_discussion_posts&discussionid=X
+
+===================================================================
+API NOTION YANG DIGUNAKAN
+===================================================================
+
+1. Query database:
+   POST /v1/databases/{database_id}/query
+
+2. Buat halaman baru:
+   POST /v1/pages
+
+3. Update halaman (tandai Selesai):
+   PATCH /v1/pages/{page_id}
+   Body: { "properties": { "Status": { "status": { "name": "Selesai" } } } }
+
+===================================================================
+ENVIRONMENT VARIABLES (.env / GitHub Secrets)
+===================================================================
+
+UT_NIM              → Nomor Induk Mahasiswa
+UT_PASS             → Password e-learning UT
+TELEGRAM_BOT_TOKEN  → Token bot Telegram
+TELEGRAM_CHAT_ID    → Chat ID tujuan notif
+NOTION_TOKEN        → Notion Integration Token
+NOTION_DATABASE_ID  → ID database Notion
+
+===================================================================
+CATATAN PENTING
+===================================================================
+
+1. File .env HARUS ada di .gitignore — jangan pernah push ke GitHub!
+2. Gunakan GitHub Secrets untuk variabel saat run di GitHub Actions
+3. Notion "Status" property harus bertipe "status" (bukan "select")
+   dan harus ada opsi bernama "Selesai"
+4. Token Notion yang expired/revoked akan menyebabkan semua query gagal
+
+===================================================================
+RIWAYAT PERUBAHAN UTAMA
+===================================================================
+
+[v1] App.java (File tunggal)
+- Login ke Moodle, cek matkul, kirim ke Notion & Telegram
+- State management: file lokal sent_tasks.txt (TIDAK COCOK untuk GitHub Actions)
+
+[v2] App.java (Masih satu file)
+- Ganti state management ke Notion API (sudahAdaDiNotion)
+- Build JSON Notion pakai JSONObject (bukan string concat)
+- Satu HttpClient dipakai ulang (thread-safe)
+- BASE_URL diextract jadi konstanta
+- Notif startup Telegram dihapus (spam prevention)
+
+[v3] Dipecah 4 file + Penambahan Forum Diskusi
+- MoodleService.java: semua API Moodle
+- NotionService.java: semua API Notion  
+- TelegramService.java: kirim Telegram
+- App.java: orchestration saja
+- Tambah cekDiskusiBaru() via mod_forum API
+- Tambah filter isForumRelevan()
+- Fix duplikasi: cek Name + Mata Kuliah (bukan Name saja)
+
+[v4] Auto-update status + Laporan Periodik
+- Tambah sudahBerpartisipasi() di MoodleService
+- Tambah getPageId() dan tandaiSelesai() di NotionService
+- Auto-update Notion ke "Selesai" jika user sudah mengerjakan diskusi
+- Tambah kirimRingkasanPeriodik() — selalu kirim laporan tiap run
+- Tambah getPendingDiskusi() — query Notion untuk item belum selesai

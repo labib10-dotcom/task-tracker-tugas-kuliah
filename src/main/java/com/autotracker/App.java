@@ -30,8 +30,11 @@ public class App {
 
             cekMatkulBaru(daftarMatkul);
             cekTugasBaru(token, daftarMatkul, courseMap);
-            cekDiskusiBaru(token, daftarMatkul, courseMap);
+            cekDiskusiBaru(token, daftarMatkul, courseMap, userId);
         }
+
+        // Selalu kirim laporan periodik setiap run — sebagai pengingat rutin
+        kirimRingkasanPeriodik();
 
         System.out.println("\n💤 Pengecekan selesai. Bot tidur lagi...");
     }
@@ -111,12 +114,42 @@ public class App {
     }
 
     // ==========================================
+    // LAPORAN PERIODIK (selalu jalan tiap run)
+    // ==========================================
+
+    /**
+     * Selalu kirim summary ke Telegram setiap bot jalan.
+     * Berisi daftar diskusi yang masih belum dikerjakan sebagai pengingat.
+     */
+    private static void kirimRingkasanPeriodik() {
+        System.out.println("\n📊 [LAPORAN] Menyiapkan ringkasan periodik...");
+        List<String> pending = NotionService.getPendingDiskusi();
+
+        StringBuilder pesan = new StringBuilder();
+        pesan.append("📊 Laporan Bot UT | ").append(java.time.LocalDate.now()).append("\n");
+        pesan.append("\u23f0 ").append(java.time.LocalTime.now().withNano(0)).append("\n\n");
+
+        if (pending.isEmpty()) {
+            pesan.append("✅ Semua diskusi sudah selesai! Mantap bro, gak ada yg tertinggal!");
+        } else {
+            pesan.append("⏳ ").append(pending.size()).append(" Diskusi belum dikerjakan:\n\n");
+            for (String item : pending) {
+                pesan.append("• ").append(item).append("\n");
+            }
+            pesan.append("\n💡 Yuk segera dikerjain sebelum deadline!");
+        }
+
+        TelegramService.kirim(pesan.toString().trim());
+    }
+
+    // ==========================================
     // CEK 3: Diskusi Forum (via Forum API)
     // ==========================================
 
-    private static void cekDiskusiBaru(String token, JSONArray daftarMatkul, Map<Integer, String> courseMap) {
+    private static void cekDiskusiBaru(String token, JSONArray daftarMatkul, Map<Integer, String> courseMap, int userId) {
         System.out.println("\n💬 [CEK 3] Memeriksa diskusi forum...");
         List<String> diskusiBaru = new ArrayList<>();
+        int selesaiDiupdate = 0;
 
         try {
             JSONArray forums = MoodleService.getForumsByCourses(token, daftarMatkul);
@@ -137,6 +170,7 @@ public class App {
                 for (int d = 0; d < discussions.length(); d++) {
                     JSONObject disc = discussions.getJSONObject(d);
                     String namaDiskusi = disc.getString("name");
+                    int discussionId = disc.getInt("id");
 
                     // Filter: hanya Diskusi.X, Kehadiran, dan Tugas
                     if (!MoodleService.isForumRelevan(namaDiskusi)) {
@@ -146,15 +180,36 @@ public class App {
 
                     String penanda = "[DISKUSI] " + namaDiskusi;
 
-                    // Cek Name + Mata Kuliah agar Diskusi.1 dari matkul berbeda tidak saling skip
+                    // Cek apakah user sudah berpartisipasi di diskusi ini
+                    boolean sudahDikerjakan = MoodleService.sudahBerpartisipasi(token, discussionId, userId);
+
                     if (NotionService.sudahAda(penanda, namaMatkul)) {
-                        System.out.println("⏭️  Skip diskusi: " + namaDiskusi + " | " + namaMatkul);
+                        // Sudah tercatat di Notion — cek apakah perlu update status ke Selesai
+                        if (sudahDikerjakan) {
+                            String pageId = NotionService.getPageId(penanda, namaMatkul);
+                            if (pageId != null) {
+                                NotionService.tandaiSelesai(pageId);
+                                selesaiDiupdate++;
+                                System.out.println("✅ Diupdate ke Selesai: " + namaDiskusi + " | " + namaMatkul);
+                            }
+                        } else {
+                            System.out.println("⏭️  Belum dikerjakan, sudah di Notion: " + namaDiskusi);
+                        }
                         continue;
                     }
 
-                    diskusiBaru.add(namaDiskusi + "\n   📚 " + namaMatkul);
-                    System.out.println("💬 Diskusi BARU: " + namaDiskusi + " | " + namaMatkul);
-                    NotionService.simpan(penanda, namaMatkul);
+                    // Belum ada di Notion sama sekali
+                    if (sudahDikerjakan) {
+                        // Sudah dikerjakan tapi belum tercatat — simpan langsung sebagai Selesai
+                        System.out.println("✅ Sudah dikerjakan, simpan sebagai Selesai: " + namaDiskusi);
+                        String pageId = NotionService.simpanDanAmbilId(penanda, namaMatkul);
+                        if (pageId != null) NotionService.tandaiSelesai(pageId);
+                    } else {
+                        // Diskusi baru dan belum dikerjakan — notif!
+                        diskusiBaru.add(namaDiskusi + "\n   📚 " + namaMatkul);
+                        System.out.println("💬 Diskusi BARU: " + namaDiskusi + " | " + namaMatkul);
+                        NotionService.simpan(penanda, namaMatkul);
+                    }
                 }
             }
         } catch (Exception e) {
@@ -167,6 +222,10 @@ public class App {
             TelegramService.kirim(pesan.toString().trim());
         } else {
             System.out.println("💤 Tidak ada diskusi baru.");
+        }
+
+        if (selesaiDiupdate > 0) {
+            System.out.println("📝 " + selesaiDiupdate + " diskusi diupdate ke Selesai di Notion.");
         }
     }
 }

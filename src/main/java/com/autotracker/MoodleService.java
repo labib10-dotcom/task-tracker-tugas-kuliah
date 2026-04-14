@@ -128,4 +128,32 @@ public class MoodleService {
                lower.startsWith("kehadiran") ||
                lower.startsWith("tugas");
     }
+
+    /**
+     * Cek apakah user sudah pernah membalas/berpartisipasi di suatu diskusi.
+     * Dipakai untuk menentukan status pengerjaan di Notion.
+     */
+    public static boolean sudahBerpartisipasi(String token, int discussionId, int userId) {
+        String url = BASE_URL + "/webservice/rest/server.php?wstoken=" + token
+                + "&wsfunction=mod_forum_get_discussion_posts"
+                + "&moodlewsrestformat=json"
+                + "&discussionid=" + discussionId;
+        try {
+            HttpRequest req = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
+            HttpResponse<String> res = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            JSONObject json = new JSONObject(res.body());
+            if (!json.has("posts")) return false;
+
+            JSONArray posts = json.getJSONArray("posts");
+            for (int i = 0; i < posts.length(); i++) {
+                // Jika ada post dari userId ini, berarti user sudah berpartisipasi
+                if (posts.getJSONObject(i).getInt("userid") == userId) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("⚠️ Gagal cek partisipasi diskusi " + discussionId + ": " + e.getMessage());
+        }
+        return false;
+    }
 }
