@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Entry point utama bot tracker e-learning UT.
@@ -160,7 +161,7 @@ public class App {
                 return;
             }
 
-            // Bangun completion map SEKALI per course (ebih efisien + sumber data = tanda hijau Done di Moodle)
+            // Bangun completion map SEKALI per course
             System.out.println("🔄 Memuat Activity Completion status dari Moodle...");
             Map<Integer, Map<Integer, Integer>> completionByCourse = new HashMap<>();
             for (int i = 0; i < daftarMatkul.length(); i++) {
@@ -168,13 +169,20 @@ public class App {
                 completionByCourse.put(courseId, MoodleService.getCompletionStatus(token, courseId, userId));
             }
 
+            // Deteksi matkul Praktik sekali di awal — berbeda aturan forumnya
+            Set<Integer> praktikCourseIds = MoodleService.getPraktikCourseIds(daftarMatkul);
+            if (!praktikCourseIds.isEmpty()) {
+                System.out.println("🔬 " + praktikCourseIds.size() + " matkul Praktik terdeteksi — hanya forum Tugas yang diambil.");
+            }
+
             System.out.println("📂 Ditemukan " + forums.length() + " forum. Mengecek diskusi...");
             for (int f = 0; f < forums.length(); f++) {
                 JSONObject forum = forums.getJSONObject(f);
                 int forumId = forum.getInt("id");
                 int courseId = forum.getInt("course");
-                int cmid = forum.optInt("cmid", -1); // ID course module untuk lookup completion
+                int cmid = forum.optInt("cmid", -1);
                 String namaMatkul = courseMap.getOrDefault(courseId, "Matkul Tidak Diketahui");
+                boolean isPraktik = praktikCourseIds.contains(courseId);
 
                 // Tentukan status selesai via Moodle completion (= tanda hijau Done di UI)
                 // State: 0=belum, 1=selesai, 2=selesai(pass), 3=selesai(fail)
@@ -195,8 +203,8 @@ public class App {
                     String namaDiskusi = disc.getString("name");
                     int discussionId = disc.getInt("id");
 
-                    if (!MoodleService.isForumRelevan(namaDiskusi)) {
-                        System.out.println("🚫 Skip (tidak relevan): " + namaDiskusi);
+                    if (!MoodleService.isForumRelevan(namaDiskusi, isPraktik)) {
+                        System.out.println("🚫 Skip (" + (isPraktik ? "Praktik→bukan Tugas" : "tidak relevan") + "): " + namaDiskusi);
                         continue;
                     }
 

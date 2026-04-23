@@ -5,7 +5,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -74,6 +76,28 @@ public class MoodleService {
         return map;
     }
 
+    /**
+     * Deteksi matkul bertipe Praktik berdasarkan categoryname, shortname, atau fullname.
+     * Matkul Praktik hanya diambil forum Tugasnya — diskusi dilewati.
+     */
+    public static Set<Integer> getPraktikCourseIds(JSONArray daftarMatkul) {
+        Set<Integer> ids = new HashSet<>();
+        for (int i = 0; i < daftarMatkul.length(); i++) {
+            JSONObject m = daftarMatkul.getJSONObject(i);
+            String categoryName = m.optString("categoryname", "").toUpperCase();
+            String shortname    = m.optString("shortname", "").toUpperCase();
+            String fullname     = m.optString("fullname", "").toUpperCase();
+
+            if (categoryName.contains("PRAKTIK") ||
+                shortname.contains("PRAK") ||
+                fullname.contains("PRAKTIK")) {
+                ids.add(m.getInt("id"));
+                System.out.println("🔬 Matkul Praktik: " + m.optString("fullname") + " (category: " + m.optString("categoryname", "-") + ")");
+            }
+        }
+        return ids;
+    }
+
     /** Ambil event kalender (tugas, kuis) dari semua course mulai sekarang */
     public static JSONArray getCalendarEvents(String token, JSONArray daftarMatkul) throws Exception {
         long sekarang = java.time.Instant.now().getEpochSecond();
@@ -119,11 +143,25 @@ public class MoodleService {
     }
 
     /**
-     * Filter relevansi forum UT.
-     * Hanya Diskusi.X, Kehadiran Sesi, dan Tugas yang perlu ditrack.
+     * Filter relevansi forum untuk matkul reguler (TUTON).
+     * Diambil: Diskusi.X, Kehadiran Sesi, dan Tugas.
      */
     public static boolean isForumRelevan(String namaForum) {
+        return isForumRelevan(namaForum, false);
+    }
+
+    /**
+     * Filter relevansi forum dengan mempertimbangkan tipe matkul.
+     * - Matkul reguler (TUTON): Diskusi + Kehadiran + Tugas
+     * - Matkul Praktik       : HANYA Tugas (Diskusi & Kehadiran dilewati)
+     */
+    public static boolean isForumRelevan(String namaForum, boolean isPraktikCourse) {
         String lower = namaForum.toLowerCase();
+        if (isPraktikCourse) {
+            // Matkul Praktik tidak punya diskusi wajib seperti TUTON,
+            // cukup track Tugas saja.
+            return lower.startsWith("tugas");
+        }
         return lower.startsWith("diskusi") ||
                lower.startsWith("kehadiran") ||
                lower.startsWith("tugas");
