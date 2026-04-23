@@ -77,22 +77,53 @@ public class MoodleService {
     }
 
     /**
-     * Deteksi matkul bertipe Praktik berdasarkan categoryname, shortname, atau fullname.
-     * Matkul Praktik hanya diambil forum Tugasnya — diskusi dilewati.
+     * Deteksi otomatis apakah suatu course adalah matkul Praktik,
+     * berdasarkan nama seksi/topik di dalam kursus tersebut:
+     *   - Praktik  : seksi bernama "Aktivitas Belajar X"
+     *   - Reguler  : seksi bernama "Sesi X"
+     *
+     * Menggunakan API core_course_get_contents dengan excludemodules=1
+     * agar response ringan (hanya ambil nama seksi, tanpa isi modul).
      */
-    public static Set<Integer> getPraktikCourseIds(JSONArray daftarMatkul) {
+    private static boolean isPraktikCourse(String token, int courseId) {
+        String url = BASE_URL + "/webservice/rest/server.php?wstoken=" + token
+                + "&wsfunction=core_course_get_contents"
+                + "&moodlewsrestformat=json"
+                + "&courseid=" + courseId
+                + "&options[0][name]=excludemodules&options[0][value]=1";
+        try {
+            HttpRequest req = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
+            HttpResponse<String> res = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            JSONArray sections = new JSONArray(res.body());
+            for (int i = 0; i < sections.length(); i++) {
+                String sectionName = sections.getJSONObject(i).optString("name", "").toLowerCase();
+                if (sectionName.contains("aktivitas belajar")) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("⚠️ Gagal cek tipe course " + courseId + ": " + e.getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * Bangun set courseId yang terdeteksi sebagai matkul Praktik.
+     * Deteksi otomatis via nama section — tidak perlu konfigurasi manual.
+     */
+    public static Set<Integer> getPraktikCourseIds(String token, JSONArray daftarMatkul) {
         Set<Integer> ids = new HashSet<>();
+        System.out.println("\n🔬 Mendeteksi tipe matkul (Praktik vs Reguler)...");
         for (int i = 0; i < daftarMatkul.length(); i++) {
             JSONObject m = daftarMatkul.getJSONObject(i);
-            String categoryName = m.optString("categoryname", "").toUpperCase();
-            String shortname    = m.optString("shortname", "").toUpperCase();
-            String fullname     = m.optString("fullname", "").toUpperCase();
+            int courseId    = m.getInt("id");
+            String fullname = m.optString("fullname", "?");
 
-            if (categoryName.contains("PRAKTIK") ||
-                shortname.contains("PRAK") ||
-                fullname.contains("PRAKTIK")) {
-                ids.add(m.getInt("id"));
-                System.out.println("🔬 Matkul Praktik: " + m.optString("fullname") + " (category: " + m.optString("categoryname", "-") + ")");
+            if (isPraktikCourse(token, courseId)) {
+                ids.add(courseId);
+                System.out.println("   🔬 PRAKTIK (Aktivitas Belajar): " + fullname);
+            } else {
+                System.out.println("   📚 Reguler  (Sesi)           : " + fullname);
             }
         }
         return ids;

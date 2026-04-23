@@ -169,8 +169,8 @@ public class App {
                 completionByCourse.put(courseId, MoodleService.getCompletionStatus(token, courseId, userId));
             }
 
-            // Deteksi matkul Praktik sekali di awal — berbeda aturan forumnya
-            Set<Integer> praktikCourseIds = MoodleService.getPraktikCourseIds(daftarMatkul);
+            // Deteksi matkul Praktik sekali di awal — otomatis via nama section course
+            Set<Integer> praktikCourseIds = MoodleService.getPraktikCourseIds(token, daftarMatkul);
             if (!praktikCourseIds.isEmpty()) {
                 System.out.println("🔬 " + praktikCourseIds.size() + " matkul Praktik terdeteksi — hanya forum Tugas yang diambil.");
             }
