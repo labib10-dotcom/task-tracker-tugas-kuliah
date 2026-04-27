@@ -168,6 +168,24 @@ public class MoodleService {
         return allAssignments;
     }
 
+    /**
+     * Ambil daftar percakapan private dari Moodle Messaging.
+     * Digunakan untuk mendeteksi pesan baru dari dosen yang belum dibaca.
+     * type=1 = individual/private, limitnum=50 cukup untuk semua dosen.
+     */
+    public static JSONArray getPesanMasuk(String token, int userId) throws Exception {
+        String url = BASE_URL + "/webservice/rest/server.php?wstoken=" + token
+                + "&wsfunction=core_message_get_conversations"
+                + "&moodlewsrestformat=json"
+                + "&userid=" + userId
+                + "&type=1"       // 1 = private/individual
+                + "&limitnum=50";
+        HttpRequest req = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
+        HttpResponse<String> res = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        JSONObject json = new JSONObject(res.body());
+        return json.optJSONArray("conversations");
+    }
+
     /** Ambil semua forum dari daftar course */
     public static JSONArray getForumsByCourses(String token, JSONArray daftarMatkul) throws Exception {
         StringBuilder url = new StringBuilder(BASE_URL + "/webservice/rest/server.php?wstoken=" + token);

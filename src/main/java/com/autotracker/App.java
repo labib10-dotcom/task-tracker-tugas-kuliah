@@ -10,7 +10,7 @@ import java.util.Set;
 
 /**
  * Entry point utama bot tracker e-learning UT.
- * Orkestrasi 3 pengecekan: Matkul Baru, Tugas/Kuis, dan Diskusi Forum.
+ * Orkestrasi 4 pengecekan: Matkul Baru, Tugas, Diskusi Forum, dan Pesan Dosen.
  */
 public class App {
 
@@ -33,6 +33,7 @@ public class App {
             cekMatkulBaru(daftarMatkul);
             cekTugasBaru(token, daftarMatkul, courseMap);
             cekDiskusiBaru(token, daftarMatkul, courseMap, userId);
+            cekPesanDosen(token, userId);
         }
 
         // Selalu kirim laporan periodik setiap run — sebagai pengingat rutin
@@ -128,6 +129,81 @@ public class App {
             TelegramService.kirim(pesan.toString().trim());
         } else {
             System.out.println("💤 Tidak ada tugas baru.");
+        }
+    }
+
+    // ==========================================
+    // CEK 4: Pesan Dosen (via Messaging API)
+    // ==========================================
+
+    /**
+     * Cek percakapan private dari Moodle.
+     * Kirim notif Telegram jika ada pesan belum terbaca dari dosen.
+     *
+     * Tidak perlu Notion — Moodle sendiri tracking status baca via unreadcount.
+     * Begitu user buka pesannya di Moodle → unreadcount=0 → bot berhenti notif.
+     */
+    private static void cekPesanDosen(String token, int userId) {
+        System.out.println("\n\ud83d\udce8 [CEK 4] Memeriksa pesan masuk dari dosen...");
+        List<String> pesanBaru = new ArrayList<>();
+
+        try {
+            JSONArray conversations = MoodleService.getPesanMasuk(token, userId);
+            if (conversations == null || conversations.isEmpty()) {
+                System.out.println("📭 Tidak ada percakapan.");
+                return;
+            }
+
+            System.out.println("🔍 Ditemukan " + conversations.length() + " percakapan. Mengecek...");
+            for (int i = 0; i < conversations.length(); i++) {
+                JSONObject conv = conversations.getJSONObject(i);
+                int unread = conv.optInt("unreadcount", 0);
+                if (unread == 0) continue; // skip jika semua sudah terbaca
+
+                JSONArray messages = conv.optJSONArray("messages");
+                if (messages == null || messages.isEmpty()) continue;
+
+                JSONObject lastMsg = messages.getJSONObject(0);
+                int senderUserId = lastMsg.optInt("useridfrom", -1);
+                if (senderUserId == userId) continue; // skip jika pesan dari kita sendiri
+
+                // Ambil nama pengirim dari members (filter keluar diri sendiri)
+                String namaDosen = "Dosen";
+                JSONArray members = conv.optJSONArray("members");
+                if (members != null) {
+                    for (int m = 0; m < members.length(); m++) {
+                        JSONObject member = members.getJSONObject(m);
+                        if (member.optInt("id", -1) != userId) {
+                            namaDosen = member.optString("fullname", "Dosen");
+                            break;
+                        }
+                    }
+                }
+
+                // Bersihkan HTML dari isi pesan & potong jika terlalu panjang
+                String isiPesan = lastMsg.optString("text", "")
+                        .replaceAll("<[^>]*>", "")
+                        .replaceAll("&nbsp;", " ")
+                        .replaceAll("&amp;", "&")
+                        .trim();
+                if (isiPesan.length() > 200) isiPesan = isiPesan.substring(0, 200) + "...";
+
+                pesanBaru.add("👤 " + namaDosen + "\n   💬 \"" + isiPesan + "\"");
+                System.out.println("   📨 Pesan belum dibaca dari: " + namaDosen + " (" + unread + " pesan)");
+            }
+
+        } catch (Exception e) {
+            System.out.println("❌ Gagal cek pesan dosen: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+        if (!pesanBaru.isEmpty()) {
+            StringBuilder pesan = new StringBuilder("📨 Ada " + pesanBaru.size() + " Pesan Belum Dibaca dari Dosen!\n\n");
+            for (String p : pesanBaru) pesan.append(p).append("\n\n");
+            pesan.append("👆 Buka Moodle untuk membaca & menghentikan pengingat ini.");
+            TelegramService.kirim(pesan.toString().trim());
+        } else {
+            System.out.println("💤 Tidak ada pesan baru dari dosen.");
         }
     }
 
