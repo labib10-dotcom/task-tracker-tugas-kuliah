@@ -31,7 +31,7 @@ public class App {
             Map<Integer, String> courseMap = MoodleService.buildCourseMap(daftarMatkul);
 
             cekMatkulBaru(daftarMatkul);
-            cekTugasBaru(token, daftarMatkul, courseMap);
+            cekTugasBaru(token, daftarMatkul, courseMap, userId);
             cekDiskusiBaru(token, daftarMatkul, courseMap, userId);
             cekPesanDosen(token, userId);
         }
@@ -75,51 +75,75 @@ public class App {
     // CEK 2: Tugas & Kuis (via Calendar API)
     // ==========================================
 
-    private static void cekTugasBaru(String token, JSONArray daftarMatkul, Map<Integer, String> courseMap) {
+    private static void cekTugasBaru(String token, JSONArray daftarMatkul, Map<Integer, String> courseMap, int userId) {
         System.out.println("\n📡 [CEK 2] Memeriksa tugas (via mod_assign_get_assignments)...");
         List<String> tugasBaru = new ArrayList<>();
         long sekarang = java.time.Instant.now().getEpochSecond();
+        int selesaiDiupdate = 0;
 
         try {
             JSONArray assignments = MoodleService.getAssignments(token, daftarMatkul);
-
             if (assignments.isEmpty()) {
                 System.out.println("📭 Tidak ada assignment ditemukan.");
                 return;
             }
 
+            // Bangun completion map per course (sama seperti CEK 3 diskusi)
+            System.out.println("🔄 Memuat completion status untuk assignment...");
+            Map<Integer, Map<Integer, Integer>> completionByCourse = new HashMap<>();
+            for (int i = 0; i < daftarMatkul.length(); i++) {
+                int cid = daftarMatkul.getJSONObject(i).getInt("id");
+                completionByCourse.put(cid, MoodleService.getCompletionStatus(token, cid, userId));
+            }
+
             System.out.println("🔍 Ditemukan " + assignments.length() + " assignment. Mengecek...");
             for (int i = 0; i < assignments.length(); i++) {
-                JSONObject assign    = assignments.getJSONObject(i);
-                String namaTugas    = assign.optString("name", "?");
-                int courseId        = assign.optInt("_courseId", -1);
-                String namaMatkul   = courseMap.getOrDefault(courseId, "Matkul Tidak Diketahui");
-                long duedate        = assign.optLong("duedate", 0);
-                long allowFrom      = assign.optLong("allowsubmissionsfromdate", 0);
+                JSONObject assign  = assignments.getJSONObject(i);
+                String namaTugas   = assign.optString("name", "?");
+                int courseId       = assign.optInt("_courseId", -1);
+                String namaMatkul  = courseMap.getOrDefault(courseId, "Matkul Tidak Diketahui");
+                long duedate       = assign.optLong("duedate", 0);
+                long allowFrom     = assign.optLong("allowsubmissionsfromdate", 0);
+                int cmid           = assign.optInt("cmid", -1);
 
                 // Filter: skip jika belum dibuka atau deadline sudah lewat
                 boolean sudahBuka  = allowFrom == 0 || allowFrom <= sekarang;
                 boolean belumLewat = duedate == 0 || duedate > sekarang;
+                if (!sudahBuka || !belumLewat) continue;
 
+                // Cek completion status via cmid (sama seperti diskusi)
+                Map<Integer, Integer> completionMap = completionByCourse.getOrDefault(courseId, new HashMap<>());
+                boolean sudahSelesai = cmid != -1 && completionMap.getOrDefault(cmid, 0) >= 1;
+
+                String penanda = "[TUGAS] " + namaTugas;
                 System.out.println("   📝 '" + namaTugas + "' | " + namaMatkul
-                        + " | buka=" + sudahBuka + " belumLewat=" + belumLewat);
+                        + " | cmid=" + cmid + " | selesai=" + sudahSelesai);
 
-                if (!sudahBuka || !belumLewat) {
-                    System.out.println("   ⏭️  Skip (belum buka / sudah lewat deadline).");
+                if (NotionService.sudahAda(penanda, namaMatkul)) {
+                    // Sudah ada → update ke Selesai jika completion terpenuhi
+                    if (sudahSelesai) {
+                        String pageId = NotionService.getPageId(penanda, namaMatkul);
+                        if (pageId != null) {
+                            NotionService.tandaiSelesai(pageId);
+                            selesaiDiupdate++;
+                            System.out.println("   ✅ Diupdate ke Selesai: " + namaTugas + " | " + namaMatkul);
+                        }
+                    } else {
+                        System.out.println("   ⏭️  Belum dikerjakan: " + namaTugas + " | " + namaMatkul);
+                    }
                     continue;
                 }
 
-                // Cek di Notion — support format lama (tanpa prefix) untuk backward compat
-                String penandaTugas = "[TUGAS] " + namaTugas;
-                if (NotionService.sudahAda(penandaTugas, namaMatkul)
-                        || NotionService.sudahAda(namaTugas, namaMatkul)) {
-                    System.out.println("   ⏭️  Sudah ada di Notion, skip.");
-                    continue;
+                // Belum ada di Notion — simpan dengan status awal
+                if (sudahSelesai) {
+                    System.out.println("   ✅ Sudah selesai, simpan sebagai Selesai: " + namaTugas);
+                    String pageId = NotionService.simpanDanAmbilId(penanda, namaMatkul);
+                    if (pageId != null) NotionService.tandaiSelesai(pageId);
+                } else {
+                    tugasBaru.add(namaTugas + "\n   📚 " + namaMatkul);
+                    System.out.println("   👉 Tugas BARU: " + namaTugas + " | " + namaMatkul);
+                    NotionService.simpan(penanda, namaMatkul);
                 }
-
-                tugasBaru.add(namaTugas + "\n   📚 " + namaMatkul);
-                System.out.println("   👉 Tugas BARU: " + namaTugas + " | " + namaMatkul);
-                NotionService.simpan(penandaTugas, namaMatkul);
             }
         } catch (Exception e) {
             System.out.println("❌ Gagal cek tugas: " + e.getMessage());
@@ -132,6 +156,9 @@ public class App {
             TelegramService.kirim(pesan.toString().trim());
         } else {
             System.out.println("💤 Tidak ada tugas baru.");
+        }
+        if (selesaiDiupdate > 0) {
+            System.out.println("📝 " + selesaiDiupdate + " tugas diupdate ke Selesai di Notion.");
         }
     }
 
