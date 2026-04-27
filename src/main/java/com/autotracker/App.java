@@ -109,14 +109,17 @@ public class App {
                     continue;
                 }
 
-                if (NotionService.sudahAda(namaTugas, namaMatkul)) {
+                // Cek di Notion — support format lama (tanpa prefix) untuk backward compat
+                String penandaTugas = "[TUGAS] " + namaTugas;
+                if (NotionService.sudahAda(penandaTugas, namaMatkul)
+                        || NotionService.sudahAda(namaTugas, namaMatkul)) {
                     System.out.println("   ⏭️  Sudah ada di Notion, skip.");
                     continue;
                 }
 
                 tugasBaru.add(namaTugas + "\n   📚 " + namaMatkul);
                 System.out.println("   👉 Tugas BARU: " + namaTugas + " | " + namaMatkul);
-                NotionService.simpan(namaTugas, namaMatkul);
+                NotionService.simpan(penandaTugas, namaMatkul);
             }
         } catch (Exception e) {
             System.out.println("❌ Gagal cek tugas: " + e.getMessage());
@@ -217,19 +220,28 @@ public class App {
      */
     private static void kirimRingkasanPeriodik() {
         System.out.println("\n📊 [LAPORAN] Menyiapkan ringkasan periodik...");
-        List<String> pending = NotionService.getPendingDiskusi();
+        List<String> pendingTugas   = NotionService.getPendingTugas();
+        List<String> pendingDiskusi = NotionService.getPendingDiskusi();
 
         StringBuilder pesan = new StringBuilder();
         pesan.append("📊 Laporan Bot UT | ").append(java.time.LocalDate.now()).append("\n");
         pesan.append("\u23f0 ").append(java.time.LocalTime.now().withNano(0)).append("\n\n");
 
-        if (pending.isEmpty()) {
-            pesan.append("✅ Semua diskusi sudah selesai! Mantap bro, gak ada yg tertinggal!");
+        // Seksi Tugas
+        if (pendingTugas.isEmpty()) {
+            pesan.append("✅ Semua tugas sudah dikerjakan!\n\n");
         } else {
-            pesan.append("⏳ ").append(pending.size()).append(" Diskusi belum dikerjakan:\n\n");
-            for (String item : pending) {
-                pesan.append("• ").append(item).append("\n");
-            }
+            pesan.append("📝 ").append(pendingTugas.size()).append(" Tugas belum dikerjakan:\n");
+            for (String item : pendingTugas) pesan.append("• ").append(item).append("\n");
+            pesan.append("\n");
+        }
+
+        // Seksi Diskusi
+        if (pendingDiskusi.isEmpty()) {
+            pesan.append("✅ Semua diskusi sudah selesai!");
+        } else {
+            pesan.append("💬 ").append(pendingDiskusi.size()).append(" Diskusi belum dikerjakan:\n");
+            for (String item : pendingDiskusi) pesan.append("• ").append(item).append("\n");
             pesan.append("\n💡 Yuk segera dikerjain sebelum deadline!");
         }
 

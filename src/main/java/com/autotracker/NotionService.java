@@ -63,15 +63,27 @@ public class NotionService {
      * Return format: "NamaDiskusi | NamaMatkul"
      */
     public static List<String> getPendingDiskusi() {
+        return getPendingByPrefix("[DISKUSI] ");
+    }
+
+    /**
+     * Ambil semua tugas yang BELUM selesai dari Notion.
+     * Dipakai oleh laporan periodik untuk mengingatkan user via Telegram.
+     */
+    public static List<String> getPendingTugas() {
+        return getPendingByPrefix("[TUGAS] ");
+    }
+
+    /** Query Notion untuk entri dengan prefix tertentu yang belum Selesai */
+    private static List<String> getPendingByPrefix(String prefix) {
         List<String> result = new ArrayList<>();
         try {
             String token = getToken();
             String dbId = getDbId();
             if (token == null || dbId == null) return result;
 
-            // Filter: Name starts_with "[DISKUSI]"
             JSONObject titleFilter = new JSONObject();
-            titleFilter.put("starts_with", "[DISKUSI]");
+            titleFilter.put("starts_with", prefix);
             JSONObject nameCondition = new JSONObject();
             nameCondition.put("property", "Name");
             nameCondition.put("title", titleFilter);
@@ -94,20 +106,20 @@ public class NotionService {
                 JSONObject page = pages.getJSONObject(i);
                 JSONObject props = page.getJSONObject("properties");
 
-                // Cek status — kalau ada dan sudah "Selesai", skip
+                // Skip jika sudah Selesai
                 try {
                     JSONObject statusProp = props.getJSONObject("Status");
                     if (statusProp.has("status") && !statusProp.isNull("status")) {
                         String namaStatus = statusProp.getJSONObject("status").getString("name");
                         if (namaStatus.equalsIgnoreCase("Selesai")) continue;
                     }
-                } catch (Exception ignored) { /* Tidak ada status = belum selesai */ }
+                } catch (Exception ignored) {}
 
-                // Ambil nama diskusi (hapus prefix [DISKUSI])
+                // Ambil nama (hapus prefix)
                 String nama = props.getJSONObject("Name")
                         .getJSONArray("title").getJSONObject(0)
                         .getJSONObject("text").getString("content")
-                        .replace("[DISKUSI] ", "");
+                        .replace(prefix, "");
 
                 // Ambil nama matkul
                 String matkul = "?";
@@ -119,7 +131,7 @@ public class NotionService {
                 result.add(nama + "\n   📚 " + matkul);
             }
         } catch (Exception e) {
-            System.out.println("⚠️ Gagal ambil pending diskusi: " + e.getMessage());
+            System.out.println("⚠️ Gagal ambil pending (" + prefix.trim() + "): " + e.getMessage());
         }
         return result;
     }
