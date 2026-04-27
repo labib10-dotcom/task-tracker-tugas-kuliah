@@ -136,6 +136,7 @@ public class MoodleService {
         url.append("&wsfunction=core_calendar_get_action_events_by_courses");
         url.append("&moodlewsrestformat=json");
         url.append("&timesortfrom=").append(sekarang);
+        url.append("&limitnum=100"); // default API hanya 20, naikkan agar tugas tidak terpotong
 
         for (int i = 0; i < daftarMatkul.length(); i++) {
             url.append("&courseids[").append(i).append("]=")

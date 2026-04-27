@@ -86,24 +86,36 @@ public class App {
                 return;
             }
 
-            System.out.println("🔍 Ditemukan " + events.length() + " event. Mengecek ke Notion...");
+            System.out.println("🔍 Ditemukan " + events.length() + " event kalender. Mengecek satu per satu...");
             for (int i = 0; i < events.length(); i++) {
                 JSONObject event = events.getJSONObject(i);
-                String namaTugas = event.getString("name");
-                int courseId = event.getJSONObject("course").getInt("id");
+                String namaTugas  = event.optString("name", "?");
+                String moduleName = event.optString("modulename", "?"); // assign / forum / quiz dll
+
+                // Safe extraction: course bisa null jika event tidak terkait course
+                JSONObject courseObj = event.optJSONObject("course");
+                if (courseObj == null) {
+                    System.out.println("⏭️  Skip (no course): " + namaTugas);
+                    continue;
+                }
+                int courseId      = courseObj.optInt("id", -1);
                 String namaMatkul = courseMap.getOrDefault(courseId, "Matkul Tidak Diketahui");
 
+                // DEBUG: tampilkan semua event sebelum difilter
+                System.out.println("   📅 [" + moduleName + "] '" + namaTugas + "' | " + namaMatkul);
+
                 if (NotionService.sudahAda(namaTugas, namaMatkul)) {
-                    System.out.println("⏭️  Skip tugas: " + namaTugas);
+                    System.out.println("   ⏭️  Sudah ada di Notion, skip.");
                     continue;
                 }
 
                 tugasBaru.add(namaTugas + "\n   📚 " + namaMatkul);
-                System.out.println("👉 Tugas BARU: " + namaTugas + " | " + namaMatkul);
+                System.out.println("   👉 Tugas BARU: " + namaTugas + " | " + namaMatkul);
                 NotionService.simpan(namaTugas, namaMatkul);
             }
         } catch (Exception e) {
             System.out.println("❌ Gagal cek tugas: " + e.getMessage());
+            e.printStackTrace();
         }
 
         if (!tugasBaru.isEmpty()) {
@@ -198,6 +210,18 @@ public class App {
                 }
 
                 JSONArray discussions = MoodleService.getForumDiscussions(token, forumId);
+
+                // ── DEBUG: tampilkan semua forum + diskusi sebelum difilter ──────────
+                System.out.println("📋 Forum: '" + forum.optString("name", "?") + "'"
+                        + " | " + (isPraktik ? "PRAKTIK" : "reguler")
+                        + " | " + namaMatkul
+                        + " | " + discussions.length() + " diskusi");
+                for (int d = 0; d < discussions.length(); d++) {
+                    System.out.println("   → Diskusi[" + d + "]: '"
+                            + discussions.getJSONObject(d).optString("name", "?") + "'");
+                }
+                // ─────────────────────────────────────────────────────────────────────
+
                 for (int d = 0; d < discussions.length(); d++) {
                     JSONObject disc = discussions.getJSONObject(d);
                     String namaDiskusi = disc.getString("name");
