@@ -18,10 +18,16 @@ public class App {
         System.out.println("\n⏳ [" + java.time.LocalTime.now() + "] Bot bangun! Mengecek e-learning...");
 
         String token = MoodleService.getToken();
-        if (token == null) { System.out.println("❌ Gagal login. Bot berhenti."); return; }
+        if (token == null) {
+            System.out.println("❌ Gagal login. Bot berhenti.");
+            return;
+        }
 
         int userId = MoodleService.getUserId(token);
-        if (userId == -1) { System.out.println("❌ Gagal ambil profil. Bot berhenti."); return; }
+        if (userId == -1) {
+            System.out.println("❌ Gagal ambil profil. Bot berhenti.");
+            return;
+        }
 
         JSONArray daftarMatkul = MoodleService.getDaftarMatkul(token, userId);
         if (daftarMatkul == null || daftarMatkul.isEmpty()) {
@@ -66,7 +72,8 @@ public class App {
 
         if (!matkulBaru.isEmpty()) {
             StringBuilder pesan = new StringBuilder("📚 Semester Baru! " + matkulBaru.size() + " matkul aktif:\n");
-            for (String m : matkulBaru) pesan.append("• ").append(m).append("\n");
+            for (String m : matkulBaru)
+                pesan.append("• ").append(m).append("\n");
             TelegramService.kirim(pesan.toString().trim());
         }
     }
@@ -98,18 +105,19 @@ public class App {
 
             System.out.println("🔍 Ditemukan " + assignments.length() + " assignment. Mengecek...");
             for (int i = 0; i < assignments.length(); i++) {
-                JSONObject assign  = assignments.getJSONObject(i);
-                String namaTugas   = assign.optString("name", "?");
-                int courseId       = assign.optInt("_courseId", -1);
-                String namaMatkul  = courseMap.getOrDefault(courseId, "Matkul Tidak Diketahui");
-                long duedate       = assign.optLong("duedate", 0);
-                long allowFrom     = assign.optLong("allowsubmissionsfromdate", 0);
-                int cmid           = assign.optInt("cmid", -1);
+                JSONObject assign = assignments.getJSONObject(i);
+                String namaTugas = assign.optString("name", "?");
+                int courseId = assign.optInt("_courseId", -1);
+                String namaMatkul = courseMap.getOrDefault(courseId, "Matkul Tidak Diketahui");
+                long duedate = assign.optLong("duedate", 0);
+                long allowFrom = assign.optLong("allowsubmissionsfromdate", 0);
+                int cmid = assign.optInt("cmid", -1);
 
                 // Filter: skip jika belum dibuka atau deadline sudah lewat
-                boolean sudahBuka  = allowFrom == 0 || allowFrom <= sekarang;
+                boolean sudahBuka = allowFrom == 0 || allowFrom <= sekarang;
                 boolean belumLewat = duedate == 0 || duedate > sekarang;
-                if (!sudahBuka || !belumLewat) continue;
+                if (!sudahBuka || !belumLewat)
+                    continue;
 
                 // Cek completion status via cmid (sama seperti diskusi)
                 Map<Integer, Integer> completionMap = completionByCourse.getOrDefault(courseId, new HashMap<>());
@@ -138,7 +146,8 @@ public class App {
                 if (sudahSelesai) {
                     System.out.println("   ✅ Sudah selesai, simpan sebagai Selesai: " + namaTugas);
                     String pageId = NotionService.simpanDanAmbilId(penanda, namaMatkul);
-                    if (pageId != null) NotionService.tandaiSelesai(pageId);
+                    if (pageId != null)
+                        NotionService.tandaiSelesai(pageId);
                 } else {
                     tugasBaru.add(namaTugas + "\n   📚 " + namaMatkul);
                     System.out.println("   👉 Tugas BARU: " + namaTugas + " | " + namaMatkul);
@@ -152,7 +161,8 @@ public class App {
 
         if (!tugasBaru.isEmpty()) {
             StringBuilder pesan = new StringBuilder("🚨 Ada " + tugasBaru.size() + " Tugas BARU!\n\n");
-            for (String t : tugasBaru) pesan.append("• ").append(t).append("\n");
+            for (String t : tugasBaru)
+                pesan.append("• ").append(t).append("\n");
             TelegramService.kirim(pesan.toString().trim());
         } else {
             System.out.println("💤 Tidak ada tugas baru.");
@@ -188,14 +198,17 @@ public class App {
             for (int i = 0; i < conversations.length(); i++) {
                 JSONObject conv = conversations.getJSONObject(i);
                 int unread = conv.optInt("unreadcount", 0);
-                if (unread == 0) continue; // skip jika semua sudah terbaca
+                if (unread == 0)
+                    continue; // skip jika semua sudah terbaca
 
                 JSONArray messages = conv.optJSONArray("messages");
-                if (messages == null || messages.isEmpty()) continue;
+                if (messages == null || messages.isEmpty())
+                    continue;
 
                 JSONObject lastMsg = messages.getJSONObject(0);
                 int senderUserId = lastMsg.optInt("useridfrom", -1);
-                if (senderUserId == userId) continue; // skip jika pesan dari kita sendiri
+                if (senderUserId == userId)
+                    continue; // skip jika pesan dari kita sendiri
 
                 // Ambil nama pengirim dari members (filter keluar diri sendiri)
                 String namaDosen = "Dosen";
@@ -216,7 +229,8 @@ public class App {
                         .replaceAll("&nbsp;", " ")
                         .replaceAll("&amp;", "&")
                         .trim();
-                if (isiPesan.length() > 200) isiPesan = isiPesan.substring(0, 200) + "...";
+                if (isiPesan.length() > 200)
+                    isiPesan = isiPesan.substring(0, 200) + "...";
 
                 pesanBaru.add("👤 " + namaDosen + "\n   💬 \"" + isiPesan + "\"");
                 System.out.println("   📨 Pesan belum dibaca dari: " + namaDosen + " (" + unread + " pesan)");
@@ -228,8 +242,10 @@ public class App {
         }
 
         if (!pesanBaru.isEmpty()) {
-            StringBuilder pesan = new StringBuilder("📨 Ada " + pesanBaru.size() + " Pesan Belum Dibaca dari Dosen!\n\n");
-            for (String p : pesanBaru) pesan.append(p).append("\n\n");
+            StringBuilder pesan = new StringBuilder(
+                    "📨 Ada " + pesanBaru.size() + " Pesan Belum Dibaca dari Dosen!\n\n");
+            for (String p : pesanBaru)
+                pesan.append(p).append("\n\n");
             pesan.append("👆 Buka Moodle untuk membaca & menghentikan pengingat ini.");
             TelegramService.kirim(pesan.toString().trim());
         } else {
@@ -247,7 +263,7 @@ public class App {
      */
     private static void kirimRingkasanPeriodik() {
         System.out.println("\n📊 [LAPORAN] Menyiapkan ringkasan periodik...");
-        List<String> pendingTugas   = NotionService.getPendingTugas();
+        List<String> pendingTugas = NotionService.getPendingTugas();
         List<String> pendingDiskusi = NotionService.getPendingDiskusi();
 
         StringBuilder pesan = new StringBuilder();
@@ -259,7 +275,8 @@ public class App {
             pesan.append("✅ Semua tugas sudah dikerjakan!\n\n");
         } else {
             pesan.append("📝 ").append(pendingTugas.size()).append(" Tugas belum dikerjakan:\n");
-            for (String item : pendingTugas) pesan.append("• ").append(item).append("\n");
+            for (String item : pendingTugas)
+                pesan.append("• ").append(item).append("\n");
             pesan.append("\n");
         }
 
@@ -268,7 +285,8 @@ public class App {
             pesan.append("✅ Semua diskusi sudah selesai!");
         } else {
             pesan.append("💬 ").append(pendingDiskusi.size()).append(" Diskusi belum dikerjakan:\n");
-            for (String item : pendingDiskusi) pesan.append("• ").append(item).append("\n");
+            for (String item : pendingDiskusi)
+                pesan.append("• ").append(item).append("\n");
             pesan.append("\n💡 Yuk segera dikerjain sebelum deadline!");
         }
 
@@ -279,7 +297,8 @@ public class App {
     // CEK 3: Diskusi Forum (via Forum API)
     // ==========================================
 
-    private static void cekDiskusiBaru(String token, JSONArray daftarMatkul, Map<Integer, String> courseMap, int userId) {
+    private static void cekDiskusiBaru(String token, JSONArray daftarMatkul, Map<Integer, String> courseMap,
+            int userId) {
         System.out.println("\n💬 [CEK 3] Memeriksa diskusi forum...");
         List<String> diskusiBaru = new ArrayList<>();
         int selesaiDiupdate = 0;
@@ -303,7 +322,8 @@ public class App {
             // Deteksi matkul Praktik sekali di awal — otomatis via nama section course
             Set<Integer> praktikCourseIds = MoodleService.getPraktikCourseIds(token, daftarMatkul);
             if (!praktikCourseIds.isEmpty()) {
-                System.out.println("🔬 " + praktikCourseIds.size() + " matkul Praktik terdeteksi — hanya forum Tugas yang diambil.");
+                System.out.println("🔬 " + praktikCourseIds.size()
+                        + " matkul Praktik terdeteksi — hanya forum Tugas yang diambil.");
             }
 
             System.out.println("📂 Ditemukan " + forums.length() + " forum. Mengecek diskusi...");
@@ -347,7 +367,8 @@ public class App {
                     int discussionId = disc.getInt("id");
 
                     if (!MoodleService.isForumRelevan(namaDiskusi, isPraktik)) {
-                        System.out.println("🚫 Skip (" + (isPraktik ? "Praktik→bukan Tugas" : "tidak relevan") + "): " + namaDiskusi);
+                        System.out.println("🚫 Skip (" + (isPraktik ? "Praktik→bukan Tugas" : "tidak relevan") + "): "
+                                + namaDiskusi);
                         continue;
                     }
 
@@ -376,7 +397,8 @@ public class App {
                     if (finalSelesai) {
                         System.out.println("✅ Sudah selesai, simpan sebagai Selesai: " + namaDiskusi);
                         String pageId = NotionService.simpanDanAmbilId(penanda, namaMatkul);
-                        if (pageId != null) NotionService.tandaiSelesai(pageId);
+                        if (pageId != null)
+                            NotionService.tandaiSelesai(pageId);
                     } else {
                         diskusiBaru.add(namaDiskusi + "\n   📚 " + namaMatkul);
                         System.out.println("💬 Diskusi BARU (belum dikerjakan): " + namaDiskusi + " | " + namaMatkul);
@@ -390,7 +412,8 @@ public class App {
 
         if (!diskusiBaru.isEmpty()) {
             StringBuilder pesan = new StringBuilder("💬 Ada " + diskusiBaru.size() + " Diskusi BARU!\n\n");
-            for (String d : diskusiBaru) pesan.append("• ").append(d).append("\n");
+            for (String d : diskusiBaru)
+                pesan.append("• ").append(d).append("\n");
             TelegramService.kirim(pesan.toString().trim());
         } else {
             System.out.println("💤 Tidak ada diskusi baru.");
