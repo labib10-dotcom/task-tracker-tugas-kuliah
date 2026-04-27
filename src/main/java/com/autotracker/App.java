@@ -75,34 +75,38 @@ public class App {
     // ==========================================
 
     private static void cekTugasBaru(String token, JSONArray daftarMatkul, Map<Integer, String> courseMap) {
-        System.out.println("\n📡 [CEK 2] Memeriksa tugas & kuis...");
+        System.out.println("\n📡 [CEK 2] Memeriksa tugas (via mod_assign_get_assignments)...");
         List<String> tugasBaru = new ArrayList<>();
+        long sekarang = java.time.Instant.now().getEpochSecond();
 
         try {
-            JSONArray events = MoodleService.getCalendarEvents(token, daftarMatkul);
+            JSONArray assignments = MoodleService.getAssignments(token, daftarMatkul);
 
-            if (events.isEmpty()) {
-                System.out.println("📭 Belum ada tugas/kuis mendatang.");
+            if (assignments.isEmpty()) {
+                System.out.println("📭 Tidak ada assignment ditemukan.");
                 return;
             }
 
-            System.out.println("🔍 Ditemukan " + events.length() + " event kalender. Mengecek satu per satu...");
-            for (int i = 0; i < events.length(); i++) {
-                JSONObject event = events.getJSONObject(i);
-                String namaTugas  = event.optString("name", "?");
-                String moduleName = event.optString("modulename", "?"); // assign / forum / quiz dll
+            System.out.println("🔍 Ditemukan " + assignments.length() + " assignment. Mengecek...");
+            for (int i = 0; i < assignments.length(); i++) {
+                JSONObject assign    = assignments.getJSONObject(i);
+                String namaTugas    = assign.optString("name", "?");
+                int courseId        = assign.optInt("_courseId", -1);
+                String namaMatkul   = courseMap.getOrDefault(courseId, "Matkul Tidak Diketahui");
+                long duedate        = assign.optLong("duedate", 0);
+                long allowFrom      = assign.optLong("allowsubmissionsfromdate", 0);
 
-                // Safe extraction: course bisa null jika event tidak terkait course
-                JSONObject courseObj = event.optJSONObject("course");
-                if (courseObj == null) {
-                    System.out.println("⏭️  Skip (no course): " + namaTugas);
+                // Filter: skip jika belum dibuka atau deadline sudah lewat
+                boolean sudahBuka  = allowFrom == 0 || allowFrom <= sekarang;
+                boolean belumLewat = duedate == 0 || duedate > sekarang;
+
+                System.out.println("   📝 '" + namaTugas + "' | " + namaMatkul
+                        + " | buka=" + sudahBuka + " belumLewat=" + belumLewat);
+
+                if (!sudahBuka || !belumLewat) {
+                    System.out.println("   ⏭️  Skip (belum buka / sudah lewat deadline).");
                     continue;
                 }
-                int courseId      = courseObj.optInt("id", -1);
-                String namaMatkul = courseMap.getOrDefault(courseId, "Matkul Tidak Diketahui");
-
-                // DEBUG: tampilkan semua event sebelum difilter
-                System.out.println("   📅 [" + moduleName + "] '" + namaTugas + "' | " + namaMatkul);
 
                 if (NotionService.sudahAda(namaTugas, namaMatkul)) {
                     System.out.println("   ⏭️  Sudah ada di Notion, skip.");
@@ -119,7 +123,7 @@ public class App {
         }
 
         if (!tugasBaru.isEmpty()) {
-            StringBuilder pesan = new StringBuilder("🚨 Ada " + tugasBaru.size() + " Tugas/Kuis BARU!\n\n");
+            StringBuilder pesan = new StringBuilder("🚨 Ada " + tugasBaru.size() + " Tugas BARU!\n\n");
             for (String t : tugasBaru) pesan.append("• ").append(t).append("\n");
             TelegramService.kirim(pesan.toString().trim());
         } else {

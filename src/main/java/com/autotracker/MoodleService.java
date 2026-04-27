@@ -129,14 +129,15 @@ public class MoodleService {
         return ids;
     }
 
-    /** Ambil event kalender (tugas, kuis) dari semua course mulai sekarang */
-    public static JSONArray getCalendarEvents(String token, JSONArray daftarMatkul) throws Exception {
-        long sekarang = java.time.Instant.now().getEpochSecond();
+    /**
+     * Ambil semua assignment (Tugas) dari semua course.
+     * Menggunakan mod_assign_get_assignments — tidak ada limit, khusus assign.
+     * Tiap objek assignment di-inject field "_courseId" untuk lookup course map.
+     */
+    public static JSONArray getAssignments(String token, JSONArray daftarMatkul) throws Exception {
         StringBuilder url = new StringBuilder(BASE_URL + "/webservice/rest/server.php?wstoken=" + token);
-        url.append("&wsfunction=core_calendar_get_action_events_by_courses");
+        url.append("&wsfunction=mod_assign_get_assignments");
         url.append("&moodlewsrestformat=json");
-        url.append("&timesortfrom=").append(sekarang);
-        url.append("&limitnum=100"); // default API hanya 20, naikkan agar tugas tidak terpotong
 
         for (int i = 0; i < daftarMatkul.length(); i++) {
             url.append("&courseids[").append(i).append("]=")
@@ -145,7 +146,26 @@ public class MoodleService {
 
         HttpRequest req = HttpRequest.newBuilder().uri(URI.create(url.toString())).GET().build();
         HttpResponse<String> res = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
-        return new JSONObject(res.body()).getJSONArray("events");
+        JSONObject json = new JSONObject(res.body());
+
+        // Flatten: courses[].assignments[] → satu JSONArray semua assignment
+        JSONArray allAssignments = new JSONArray();
+        JSONArray courses = json.optJSONArray("courses");
+        if (courses == null) return allAssignments;
+
+        for (int i = 0; i < courses.length(); i++) {
+            JSONObject course = courses.getJSONObject(i);
+            int courseId = course.getInt("id");
+            JSONArray assignments = course.optJSONArray("assignments");
+            if (assignments == null) continue;
+
+            for (int j = 0; j < assignments.length(); j++) {
+                JSONObject assign = assignments.getJSONObject(j);
+                assign.put("_courseId", courseId); // inject untuk lookup courseMap
+                allAssignments.put(assign);
+            }
+        }
+        return allAssignments;
     }
 
     /** Ambil semua forum dari daftar course */
