@@ -111,21 +111,29 @@ public class App {
                 String namaMatkul = courseMap.getOrDefault(courseId, "Matkul Tidak Diketahui");
                 long duedate = assign.optLong("duedate", 0);
                 long allowFrom = assign.optLong("allowsubmissionsfromdate", 0);
-                int cmid = assign.optInt("cmid", -1);
+                int cmid     = assign.optInt("cmid", -1);
+                int assignId = assign.optInt("id", -1);
 
                 // Filter: skip jika belum dibuka atau deadline sudah lewat
                 boolean sudahBuka = allowFrom == 0 || allowFrom <= sekarang;
                 boolean belumLewat = duedate == 0 || duedate > sekarang;
-                if (!sudahBuka || !belumLewat)
-                    continue;
+                if (!sudahBuka || !belumLewat) continue;
 
-                // Cek completion status via cmid (sama seperti diskusi)
+                // Cek 1: completion status via cmid (Praktik: "Mark as Done" button)
                 Map<Integer, Integer> completionMap = completionByCourse.getOrDefault(courseId, new HashMap<>());
                 boolean sudahSelesai = cmid != -1 && completionMap.getOrDefault(cmid, 0) >= 1;
 
+                // Cek 2: fallback via submission status (Reguler: cek apakah file sudah dikumpulkan)
+                if (!sudahSelesai && assignId != -1) {
+                    String subStatus = MoodleService.getSubmissionStatus(token, assignId, userId);
+                    sudahSelesai = "submitted".equalsIgnoreCase(subStatus);
+                    System.out.println("   📤 Submission status '" + namaTugas + "': " + subStatus);
+                }
+
                 String penanda = "[TUGAS] " + namaTugas;
                 System.out.println("   📝 '" + namaTugas + "' | " + namaMatkul
-                        + " | cmid=" + cmid + " | selesai=" + sudahSelesai);
+                        + " | selesai=" + sudahSelesai);
+
 
                 if (NotionService.sudahAda(penanda, namaMatkul)) {
                     // Sudah ada → update ke Selesai jika completion terpenuhi

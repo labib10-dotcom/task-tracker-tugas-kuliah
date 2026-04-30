@@ -186,6 +186,35 @@ public class MoodleService {
         return json.optJSONArray("conversations");
     }
 
+    /**
+     * Cek status submission tugas tertentu untuk user tertentu.
+     * Digunakan sebagai fallback untuk matkul reguler yang tidak punya activity completion.
+     *
+     * @return "submitted" jika sudah dikumpulkan, "nosubmission" jika belum/error.
+     */
+    public static String getSubmissionStatus(String token, int assignId, int userId) {
+        try {
+            String url = BASE_URL + "/webservice/rest/server.php?wstoken=" + token
+                    + "&wsfunction=mod_assign_get_submission_status"
+                    + "&moodlewsrestformat=json"
+                    + "&assignid=" + assignId
+                    + "&userid=" + userId;
+            HttpRequest req = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
+            HttpResponse<String> res = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            JSONObject json = new JSONObject(res.body());
+
+            // Struktur: { lastattempt: { submission: { status: "submitted" | ... } } }
+            JSONObject lastAttempt = json.optJSONObject("lastattempt");
+            if (lastAttempt == null) return "nosubmission";
+            JSONObject submission = lastAttempt.optJSONObject("submission");
+            if (submission == null) return "nosubmission";
+            return submission.optString("status", "nosubmission");
+        } catch (Exception e) {
+            System.out.println("   ⚠️ Gagal cek submission status assignId=" + assignId + ": " + e.getMessage());
+            return "nosubmission";
+        }
+    }
+
     /** Ambil semua forum dari daftar course */
     public static JSONArray getForumsByCourses(String token, JSONArray daftarMatkul) throws Exception {
         StringBuilder url = new StringBuilder(BASE_URL + "/webservice/rest/server.php?wstoken=" + token);
