@@ -4,6 +4,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -104,6 +105,7 @@ public class App {
             }
 
             System.out.println("🔍 Ditemukan " + assignments.length() + " assignment. Mengecek...");
+            Set<String> simpanDalamRun = new HashSet<>(); // anti-duplikat dalam satu run
             for (int i = 0; i < assignments.length(); i++) {
                 JSONObject assign = assignments.getJSONObject(i);
                 String namaTugas = assign.optString("name", "?");
@@ -111,19 +113,21 @@ public class App {
                 String namaMatkul = courseMap.getOrDefault(courseId, "Matkul Tidak Diketahui");
                 long duedate = assign.optLong("duedate", 0);
                 long allowFrom = assign.optLong("allowsubmissionsfromdate", 0);
-                int cmid     = assign.optInt("cmid", -1);
+                int cmid = assign.optInt("cmid", -1);
                 int assignId = assign.optInt("id", -1);
 
                 // Filter: skip jika belum dibuka atau deadline sudah lewat
                 boolean sudahBuka = allowFrom == 0 || allowFrom <= sekarang;
                 boolean belumLewat = duedate == 0 || duedate > sekarang;
-                if (!sudahBuka || !belumLewat) continue;
+                if (!sudahBuka || !belumLewat)
+                    continue;
 
                 // Cek 1: completion status via cmid (Praktik: "Mark as Done" button)
                 Map<Integer, Integer> completionMap = completionByCourse.getOrDefault(courseId, new HashMap<>());
                 boolean sudahSelesai = cmid != -1 && completionMap.getOrDefault(cmid, 0) >= 1;
 
-                // Cek 2: fallback via submission status (Reguler: cek apakah file sudah dikumpulkan)
+                // Cek 2: fallback via submission status (Reguler: cek apakah file sudah
+                // dikumpulkan)
                 if (!sudahSelesai && assignId != -1) {
                     String subStatus = MoodleService.getSubmissionStatus(token, assignId, userId);
                     sudahSelesai = "submitted".equalsIgnoreCase(subStatus);
@@ -133,7 +137,6 @@ public class App {
                 String penanda = "[TUGAS] " + namaTugas;
                 System.out.println("   📝 '" + namaTugas + "' | " + namaMatkul
                         + " | selesai=" + sudahSelesai);
-
 
                 if (NotionService.sudahAda(penanda, namaMatkul)) {
                     // Sudah ada → update ke Selesai jika completion terpenuhi
@@ -151,15 +154,24 @@ public class App {
                 }
 
                 // Belum ada di Notion — simpan dengan status awal
+                String kunciRun = penanda + "||" + namaMatkul;
                 if (sudahSelesai) {
-                    System.out.println("   ✅ Sudah selesai, simpan sebagai Selesai: " + namaTugas);
-                    String pageId = NotionService.simpanDanAmbilId(penanda, namaMatkul);
-                    if (pageId != null)
-                        NotionService.tandaiSelesai(pageId);
+                    if (simpanDalamRun.add(kunciRun)) {
+                        System.out.println("   ✅ Sudah selesai, simpan sebagai Selesai: " + namaTugas);
+                        String pageId = NotionService.simpanDanAmbilId(penanda, namaMatkul);
+                        if (pageId != null)
+                            NotionService.tandaiSelesai(pageId);
+                    } else {
+                        System.out.println("   🛡️ Duplikat dicegah (in-run): " + penanda);
+                    }
                 } else {
-                    tugasBaru.add(namaTugas + "\n   📚 " + namaMatkul);
-                    System.out.println("   👉 Tugas BARU: " + namaTugas + " | " + namaMatkul);
-                    NotionService.simpan(penanda, namaMatkul);
+                    if (simpanDalamRun.add(kunciRun)) {
+                        tugasBaru.add(namaTugas + "\n   📚 " + namaMatkul);
+                        System.out.println("   👉 Tugas BARU: " + namaTugas + " | " + namaMatkul);
+                        NotionService.simpan(penanda, namaMatkul);
+                    } else {
+                        System.out.println("   🛡️ Duplikat dicegah (in-run): " + penanda);
+                    }
                 }
             }
         } catch (Exception e) {
@@ -335,6 +347,7 @@ public class App {
             }
 
             System.out.println("📂 Ditemukan " + forums.length() + " forum. Mengecek diskusi...");
+            Set<String> simpanDalamRun = new HashSet<>(); // anti-duplikat dalam satu run
             for (int f = 0; f < forums.length(); f++) {
                 JSONObject forum = forums.getJSONObject(f);
                 int forumId = forum.getInt("id");
@@ -402,15 +415,25 @@ public class App {
                     }
 
                     // Belum ada di Notion
+                    String kunciRun = penanda + "||" + namaMatkul;
                     if (finalSelesai) {
-                        System.out.println("✅ Sudah selesai, simpan sebagai Selesai: " + namaDiskusi);
-                        String pageId = NotionService.simpanDanAmbilId(penanda, namaMatkul);
-                        if (pageId != null)
-                            NotionService.tandaiSelesai(pageId);
+                        if (simpanDalamRun.add(kunciRun)) {
+                            System.out.println("✅ Sudah selesai, simpan sebagai Selesai: " + namaDiskusi);
+                            String pageId = NotionService.simpanDanAmbilId(penanda, namaMatkul);
+                            if (pageId != null)
+                                NotionService.tandaiSelesai(pageId);
+                        } else {
+                            System.out.println("   🛡️ Duplikat dicegah (in-run): " + penanda);
+                        }
                     } else {
-                        diskusiBaru.add(namaDiskusi + "\n   📚 " + namaMatkul);
-                        System.out.println("💬 Diskusi BARU (belum dikerjakan): " + namaDiskusi + " | " + namaMatkul);
-                        NotionService.simpan(penanda, namaMatkul);
+                        if (simpanDalamRun.add(kunciRun)) {
+                            diskusiBaru.add(namaDiskusi + "\n   📚 " + namaMatkul);
+                            System.out
+                                    .println("💬 Diskusi BARU (belum dikerjakan): " + namaDiskusi + " | " + namaMatkul);
+                            NotionService.simpan(penanda, namaMatkul);
+                        } else {
+                            System.out.println("   🛡️ Duplikat dicegah (in-run): " + penanda);
+                        }
                     }
                 }
             }

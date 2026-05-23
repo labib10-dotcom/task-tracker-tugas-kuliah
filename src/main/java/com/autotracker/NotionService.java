@@ -13,7 +13,8 @@ import org.json.JSONObject;
 /**
  * Semua interaksi dengan Notion API.
  * Dipakai sebagai persistent state management agar bot tidak duplikasi data
- * walau dijalankan berkali-kali di GitHub Actions (yang tidak punya file lokal).
+ * walau dijalankan berkali-kali di GitHub Actions (yang tidak punya file
+ * lokal).
  */
 public class NotionService {
 
@@ -22,8 +23,13 @@ public class NotionService {
     private static final String NOTION_API = "https://api.notion.com/v1";
     private static final String NOTION_VERSION = "2022-06-28";
 
-    private static String getToken() { return dotenv.get("NOTION_TOKEN"); }
-    private static String getDbId()  { return dotenv.get("NOTION_DATABASE_ID"); }
+    private static String getToken() {
+        return dotenv.get("NOTION_TOKEN");
+    }
+
+    private static String getDbId() {
+        return dotenv.get("NOTION_DATABASE_ID");
+    }
 
     /**
      * Cek apakah entri dengan nama ini sudah ada di Notion (cek Name saja).
@@ -41,8 +47,10 @@ public class NotionService {
     }
 
     /**
-     * Cek apakah entri dengan nama + mata kuliah ini sudah ada di Notion (cek keduanya).
-     * Dipakai untuk diskusi dan tugas agar "Diskusi.1" dari matkul berbeda tidak saling skip.
+     * Cek apakah entri dengan nama + mata kuliah ini sudah ada di Notion (cek
+     * keduanya).
+     * Dipakai untuk diskusi dan tugas agar "Diskusi.1" dari matkul berbeda tidak
+     * saling skip.
      */
     public static boolean sudahAda(String nama, String namaMatkul) {
         JSONObject nameCondition = buildTitleFilter("Name", nama);
@@ -80,7 +88,8 @@ public class NotionService {
         try {
             String token = getToken();
             String dbId = getDbId();
-            if (token == null || dbId == null) return result;
+            if (token == null || dbId == null)
+                return result;
 
             JSONObject titleFilter = new JSONObject();
             titleFilter.put("starts_with", prefix);
@@ -111,9 +120,11 @@ public class NotionService {
                     JSONObject statusProp = props.getJSONObject("Status");
                     if (statusProp.has("status") && !statusProp.isNull("status")) {
                         String namaStatus = statusProp.getJSONObject("status").getString("name");
-                        if (namaStatus.equalsIgnoreCase("Selesai")) continue;
+                        if (namaStatus.equalsIgnoreCase("Selesai"))
+                            continue;
                     }
-                } catch (Exception ignored) {}
+                } catch (Exception ignored) {
+                }
 
                 // Ambil nama (hapus prefix)
                 String nama = props.getJSONObject("Name")
@@ -126,14 +137,17 @@ public class NotionService {
                 try {
                     matkul = props.getJSONObject("Mata Kuliah")
                             .getJSONObject("select").getString("name");
-                } catch (Exception ignored) {}
+                } catch (Exception ignored) {
+                }
 
                 result.add(nama + "\n   📚 " + matkul);
             }
         } catch (Exception e) {
             System.out.println("⚠️ Gagal ambil pending (" + prefix.trim() + "): " + e.getMessage());
         }
-        return result;
+
+        // Dedup: jika Notion terlanjur punya entri duplikat, tampilkan hanya satu
+        return new ArrayList<>(new java.util.LinkedHashSet<>(result));
     }
 
     /** Simpan entri baru ke Notion dan kembalikan page ID yang dihasilkan */
@@ -141,7 +155,8 @@ public class NotionService {
         try {
             String token = getToken();
             String dbId = getDbId();
-            if (token == null || dbId == null) return null;
+            if (token == null || dbId == null)
+                return null;
 
             JSONObject body = buildPageBody(dbId, namaEntri, namaMatkul);
 
@@ -177,7 +192,8 @@ public class NotionService {
         try {
             String token = getToken();
             String dbId = getDbId();
-            if (token == null || dbId == null) return null;
+            if (token == null || dbId == null)
+                return null;
 
             JSONObject nameCondition = buildTitleFilter("Name", nama);
             JSONObject matkulCondition = buildSelectFilter("Mata Kuliah", namaMatkul);
@@ -212,7 +228,8 @@ public class NotionService {
     public static void tandaiSelesai(String pageId) {
         try {
             String token = getToken();
-            if (token == null) return;
+            if (token == null)
+                return;
 
             // Notion Status property (tipe "status")
             JSONObject statusValue = new JSONObject();
@@ -279,7 +296,8 @@ public class NotionService {
         try {
             String token = getToken();
             String dbId = getDbId();
-            if (token == null || dbId == null) return 0;
+            if (token == null || dbId == null)
+                return 0;
 
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(NOTION_API + "/databases/" + dbId + "/query"))

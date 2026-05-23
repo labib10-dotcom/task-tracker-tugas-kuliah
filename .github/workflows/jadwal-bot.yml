@@ -8,6 +8,10 @@ on:
 jobs:
   jalankan-bot:
     runs-on: ubuntu-latest
+    # Cegah dua run jalan bersamaan — run ke-2 menunggu run ke-1 selesai
+    concurrency:
+      group: tracker-bot-run
+      cancel-in-progress: false
 
     steps:
       - name: Ambil Kodingan
