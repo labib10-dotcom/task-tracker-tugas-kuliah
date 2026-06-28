@@ -8,12 +8,15 @@ Bot otomatis berbasis **Java** yang memantau aktivitas e-learning **Universitas 
 
 | Fitur | Keterangan |
 |---|---|
-| 📋 Deteksi Matkul Baru | Notif Telegram saat semester baru & matkul aktif |
+| 📋 Deteksi Matkul Baru | Notif Telegram saat semester baru & matkul aktif (dilewati jika sudah komplit) |
 | 📡 Pantau Tugas & Kuis | Ambil dari Moodle Calendar API per-course |
 | 💬 Pantau Diskusi Forum | Filter hanya Diskusi, Kehadiran & Tugas yang relevan |
 | ✅ Deteksi Sudah Dikerjakan | Baca tanda hijau "Done" langsung dari Activity Completion Moodle |
-| 📊 Laporan Periodik | Reminder ke Telegram setiap run — daftar diskusi yang belum selesai |
+| 📊 Laporan Periodik | Reminder ke Telegram setiap run (dilewati jika sudah sesi akhir & tugas beres) |
 | 🔁 Anti-Duplikasi | State management via Notion, aman di environment ephemeral GitHub Actions |
+| 🤫 Penanganan Sesi Akhir | Menghentikan spam laporan jika sudah masuk Sesi 8 / Aktivitas 15 dan semua tugas selesai |
+| 🧹 Reset Akhir Semester | Otomatis berhenti beroperasi & mereset status penanda matkul jika Moodle kosong |
+| 🆗 Keyword Telegram | Mengirim keyword "Matkul Komplit!" ke bot Telegram untuk menonaktifkan notif matkul baru |
 
 ---
 
@@ -154,10 +157,11 @@ Untuk menjalankan manual: **Actions → Auto Bot Tracker UT → Run workflow**
 
 Bot menggunakan Notion sebagai **persistent state** — pengganti file lokal yang tidak cocok di GitHub Actions (environment ephemeral).
 
-| Prefix di Notion | Artinya |
+| Prefix di Notion / Entri Khusus | Artinya |
 |---|---|
 | `[MATKUL] Nama Matkul` | Mata kuliah yang sudah terdeteksi |
 | `[DISKUSI] Diskusi.1` | Diskusi forum yang sudah/belum dikerjakan |
+| `[STATUS] Matkul Komplit` | Penanda bahwa seluruh mata kuliah telah selesai diimpor (Mata Kuliah: `SYSTEM`) |
 | *(tanpa prefix)* | Tugas / kuis dari calendar |
 
 ---

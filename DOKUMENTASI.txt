@@ -1,6 +1,6 @@
 ===================================================================
 DOKUMENTASI TEKNIS - UT Academic Tracker Bot
-Versi: 4.0 | Terakhir diperbarui: 14 April 2026
+Versi: 5.0 | Terakhir diperbarui: 28 Juni 2026
 ===================================================================
 
 STRUKTUR FILE PROYEK:
@@ -20,7 +20,7 @@ STRUKTUR FILE PROYEK:
   └── pom.xml                            → Maven dependencies
 
 ===================================================================
-FITUR AKTIF (v4.0)
+FITUR AKTIF (v5.0)
 ===================================================================
 
 [CEK 1] MATKUL BARU
@@ -28,12 +28,14 @@ FITUR AKTIF (v4.0)
   - Cek apakah matkul sudah ada di Notion (by Name)
   - Simpan ke Notion dengan prefix [MATKUL]
   - Notif Telegram hanya saat ada matkul baru (awal semester)
+  - Fitur Tambahan: Notifikasi penambahan matkul baru otomatis dilewati jika terdapat status penanda `[STATUS] Matkul Komplit` di Notion (untuk menghindari spam berkali-kali).
 
 [CEK 2] TUGAS & KUIS
   - API: core_calendar_get_action_events_by_courses
   - Filter timesortfrom = sekarang (tidak ambil event yang sudah lewat)
   - Cek duplikat: Name + Mata Kuliah di Notion
   - Notif Telegram jika ada tugas baru
+  - Fitur Tambahan: Pengecekan nama tugas terhadap pola akhir sesi (Sesi 8 atau Aktivitas Belajar 15).
 
 [CEK 3] DISKUSI FORUM
   - API 1: mod_forum_get_forums_by_courses       → Ambil semua forum
@@ -43,6 +45,7 @@ FITUR AKTIF (v4.0)
   - Completion status dibaca dari Activity Completion Moodle (= tanda hijau Done)
   - Completion map dibangun SEKALI per course (efisien, bukan per diskusi)
   - Fallback: mod_forum_get_discussion_posts jika cmid tidak tersedia
+  - Fitur Tambahan: Pengecekan nama forum dan nama diskusi terhadap pola akhir sesi (Sesi 8 atau Aktivitas Belajar 15).
 
   Decision matrix tiap diskusi:
   ┌─────────────────────────────┬──────────────┬──────────────────────────────┐
@@ -54,11 +57,27 @@ FITUR AKTIF (v4.0)
   │ State = 0  (Belum)          │ Belum ada    │ Simpan + Notif Telegram 🔔   │
   └─────────────────────────────┴──────────────┴──────────────────────────────┘
 
-[LAPORAN] PERIODIK (selalu jalan tiap run)
-  - Query Notion: semua item dengan Name starts_with "[DISKUSI]"
+[CEK 4] PESAN DOSEN
+  - Deteksi pesan private yang belum dibaca dari dosen di Moodle.
+  - Kirim pengingat ke Telegram jika ada unread count > 0 dari orang lain.
+
+[CEK 5 / TELEGRAM KEYWORD] "Matkul Komplit!"
+  - API: /getUpdates (Telegram Bot API)
+  - Membaca input keyword "Matkul Komplit!" dari TELEGRAM_CHAT_ID yang sah.
+  - Jika terdeteksi, bot akan menyimpan penanda status `[STATUS] Matkul Komplit` ke database Notion dan mengirimkan pesan konfirmasi sukses.
+
+[PENANGANAN AKHIR SEMESTER & SESI AKHIR]
+  - Jika daftar mata kuliah di e-learning Moodle kosong (semester berakhir):
+    1. Bot akan otomatis menghapus status `[STATUS] Matkul Komplit` di Notion (agar siap untuk semester baru).
+    2. Bot langsung tidur (return) tanpa mengirimkan laporan periodik.
+  - Jika bot mendeteksi pola akhir sesi (Sesi 8 atau Aktivitas Belajar 15) pada run tersebut:
+    - Jika semua tugas/diskusi di database Notion sudah selesai ("Selesai") dan tidak ada data terbaru yang ditarik (adaMatkulBaru/adaTugasBaru/adaDiskusiBaru/adaPesanBaru bernilai false), maka bot akan **melewati** pengiriman laporan periodik.
+
+[LAPORAN] PERIODIK (kondisional)
+  - Query Notion: semua item dengan Name starts_with "[DISKUSI]" dan tugas calendar.
   - Filter di Java: hanya yang Status bukan "Selesai"
-  - Kirim ringkasan ke Telegram berisi daftar diskusi yang masih belum dikerjakan
-  - Fungsi: reminder rutin, bot tetap dirasakan aktif meski tidak ada perubahan
+  - Kirim ringkasan ke Telegram berisi daftar tugas & diskusi yang masih belum dikerjakan sebagai pengingat rutin.
+  - Dilewati jika kriteria [SESI AKHIR] di atas terpenuhi.
 
 ===================================================================
 ANTI-DUPLIKASI (State Management)
@@ -266,3 +285,8 @@ RIWAYAT PERUBAHAN
   - Tambah kirimRingkasanPeriodik(): laporan ke Telegram setiap run
   - Tambah getPendingDiskusi(): query Notion untuk item belum Selesai
   - Format notif lebih informatif (nama matkul di setiap item)
+
+[v5.0] - Penanganan Sesi Akhir & Akhir Semester
+  - Penapisan notifikasi periodik Telegram pada Sesi 8 / Aktivitas Belajar 15 saat semua tugas selesai.
+  - Reset otomatis status dan penghentian notifikasi periodik saat semester berakhir (mata kuliah kosong).
+  - Integrasi perintah Telegram "Matkul Komplit!" untuk menonaktifkan notifikasi penambahan mata kuliah secara dinamis.
