@@ -23,6 +23,29 @@ public class MoodleService {
     private static final String NIM = dotenv.get("UT_NIM");
     private static final String PASS = dotenv.get("UT_PASS");
 
+    private static boolean hasReachedEndSession = false;
+
+    public static boolean isEndSessionReached() {
+        return hasReachedEndSession;
+    }
+
+    public static void setEndSessionReached(boolean val) {
+        hasReachedEndSession = val;
+    }
+
+    public static boolean checkEndSessionPattern(String text) {
+        if (text == null) return false;
+        String lower = text.toLowerCase();
+        
+        // Pola Sesi 8: mengandung "sesi" dan "8"
+        boolean isSesi8 = lower.contains("sesi") && (lower.contains("8") || lower.contains("ke-8") || lower.contains("ke 8"));
+        
+        // Pola Aktivitas Belajar 15: mengandung "aktivitas belajar" dan "15"
+        boolean isAktivitasBelajar15 = lower.contains("aktivitas belajar") && (lower.contains("15") || lower.contains("ke-15") || lower.contains("ke 15"));
+        
+        return isSesi8 || isAktivitasBelajar15;
+    }
+
     /** Login ke Moodle dan dapatkan token API */
     public static String getToken() {
         String url = BASE_URL + "/login/token.php?username=" + NIM + "&password=" + PASS + "&service=moodle_mobile_app";
@@ -96,8 +119,11 @@ public class MoodleService {
             HttpResponse<String> res = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
             JSONArray sections = new JSONArray(res.body());
             for (int i = 0; i < sections.length(); i++) {
-                String sectionName = sections.getJSONObject(i).optString("name", "").toLowerCase();
-                if (sectionName.contains("aktivitas belajar")) {
+                String sectionName = sections.getJSONObject(i).optString("name", "");
+                if (checkEndSessionPattern(sectionName)) {
+                    hasReachedEndSession = true;
+                }
+                if (sectionName.toLowerCase().contains("aktivitas belajar")) {
                     return true;
                 }
             }

@@ -15,8 +15,23 @@ import java.util.Set;
  */
 public class App {
 
+    private static boolean adaMatkulBaru = false;
+    private static boolean adaTugasBaru = false;
+    private static boolean adaDiskusiBaru = false;
+    private static boolean adaPesanBaru = false;
+
     public static void main(String[] args) {
         System.out.println("\n⏳ [" + java.time.LocalTime.now() + "] Bot bangun! Mengecek e-learning...");
+
+        // Cek apakah user mengirim "Matkul Komplit!" di Telegram
+        if (TelegramService.cekKeyword("Matkul Komplit!")) {
+            System.out.println("📥 Terdeteksi keyword 'Matkul Komplit!' dari Telegram.");
+            if (!NotionService.sudahAda("[STATUS] Matkul Komplit", "SYSTEM")) {
+                NotionService.simpan("[STATUS] Matkul Komplit", "SYSTEM");
+                System.out.println("💾 Menyimpan [STATUS] Matkul Komplit ke Notion.");
+                TelegramService.kirim("🆗 Status 'Matkul Komplit!' terdeteksi. Notifikasi pembaharuan mata kuliah telah dinonaktifkan.");
+            }
+        }
 
         String token = MoodleService.getToken();
         if (token == null) {
@@ -33,18 +48,31 @@ public class App {
         JSONArray daftarMatkul = MoodleService.getDaftarMatkul(token, userId);
         if (daftarMatkul == null || daftarMatkul.isEmpty()) {
             System.out.println("📭 Belum ada mata kuliah aktif. Bot tidur.");
-        } else {
-            // Buat peta courseId -> namaMatkul untuk lookup cepat di semua pengecekan
-            Map<Integer, String> courseMap = MoodleService.buildCourseMap(daftarMatkul);
-
-            cekMatkulBaru(daftarMatkul);
-            cekTugasBaru(token, daftarMatkul, courseMap, userId);
-            cekDiskusiBaru(token, daftarMatkul, courseMap, userId);
-            cekPesanDosen(token, userId);
+            // Reset status Matkul Komplit saat semester berakhir (tidak ada matkul aktif)
+            NotionService.hapusStatusMatkulKomplit();
+            return;
         }
 
-        // Selalu kirim laporan periodik setiap run — sebagai pengingat rutin
-        kirimRingkasanPeriodik();
+        // Buat peta courseId -> namaMatkul untuk lookup cepat di semua pengecekan
+        Map<Integer, String> courseMap = MoodleService.buildCourseMap(daftarMatkul);
+
+        cekMatkulBaru(daftarMatkul);
+        cekTugasBaru(token, daftarMatkul, courseMap, userId);
+        cekDiskusiBaru(token, daftarMatkul, courseMap, userId);
+        cekPesanDosen(token, userId);
+
+        // Cek apakah semua tugas sudah selesai di Notion
+        List<String> pendingTugas = NotionService.getPendingTugas();
+        List<String> pendingDiskusi = NotionService.getPendingDiskusi();
+        boolean semuaSelesai = pendingTugas.isEmpty() && pendingDiskusi.isEmpty();
+        boolean adaDataBaru = adaMatkulBaru || adaTugasBaru || adaDiskusiBaru || adaPesanBaru;
+        boolean endSessionReached = MoodleService.isEndSessionReached();
+
+        if (endSessionReached && semuaSelesai && !adaDataBaru) {
+            System.out.println("🤫 Sesi akhir (Sesi 8/Aktivitas 15) terdeteksi, semua tugas selesai, dan tidak ada data baru. Melewati laporan periodik.");
+        } else {
+            kirimRingkasanPeriodik(pendingTugas, pendingDiskusi);
+        }
 
         System.out.println("\n💤 Pengecekan selesai. Bot tidur lagi...");
     }
@@ -71,11 +99,17 @@ public class App {
             }
         }
 
+        boolean isMatkulKomplit = NotionService.sudahAda("[STATUS] Matkul Komplit", "SYSTEM");
         if (!matkulBaru.isEmpty()) {
-            StringBuilder pesan = new StringBuilder("📚 Semester Baru! " + matkulBaru.size() + " matkul aktif:\n");
-            for (String m : matkulBaru)
-                pesan.append("• ").append(m).append("\n");
-            TelegramService.kirim(pesan.toString().trim());
+            if (!isMatkulKomplit) {
+                adaMatkulBaru = true;
+                StringBuilder pesan = new StringBuilder("📚 Semester Baru! " + matkulBaru.size() + " matkul aktif:\n");
+                for (String m : matkulBaru)
+                    pesan.append("• ").append(m).append("\n");
+                TelegramService.kirim(pesan.toString().trim());
+            } else {
+                System.out.println("🤫 Notifikasi matkul baru dilewati karena status 'Matkul Komplit!' aktif.");
+            }
         }
     }
 
@@ -121,6 +155,11 @@ public class App {
                 boolean belumLewat = duedate == 0 || duedate > sekarang;
                 if (!sudahBuka || !belumLewat)
                     continue;
+
+                // Cek pola sesi akhir dari nama tugas
+                if (MoodleService.checkEndSessionPattern(namaTugas)) {
+                    MoodleService.setEndSessionReached(true);
+                }
 
                 // Cek 1: completion status via cmid (Praktik: "Mark as Done" button)
                 Map<Integer, Integer> completionMap = completionByCourse.getOrDefault(courseId, new HashMap<>());
@@ -180,6 +219,7 @@ public class App {
         }
 
         if (!tugasBaru.isEmpty()) {
+            adaTugasBaru = true;
             StringBuilder pesan = new StringBuilder("🚨 Ada " + tugasBaru.size() + " Tugas BARU!\n\n");
             for (String t : tugasBaru)
                 pesan.append("• ").append(t).append("\n");
@@ -262,6 +302,7 @@ public class App {
         }
 
         if (!pesanBaru.isEmpty()) {
+            adaPesanBaru = true;
             StringBuilder pesan = new StringBuilder(
                     "📨 Ada " + pesanBaru.size() + " Pesan Belum Dibaca dari Dosen!\n\n");
             for (String p : pesanBaru)
@@ -281,10 +322,8 @@ public class App {
      * Selalu kirim summary ke Telegram setiap bot jalan.
      * Berisi daftar diskusi yang masih belum dikerjakan sebagai pengingat.
      */
-    private static void kirimRingkasanPeriodik() {
+    private static void kirimRingkasanPeriodik(List<String> pendingTugas, List<String> pendingDiskusi) {
         System.out.println("\n📊 [LAPORAN] Menyiapkan ringkasan periodik...");
-        List<String> pendingTugas = NotionService.getPendingTugas();
-        List<String> pendingDiskusi = NotionService.getPendingDiskusi();
 
         StringBuilder pesan = new StringBuilder();
         pesan.append("📊 Laporan Bot UT | ").append(java.time.LocalDate.now()).append("\n");
@@ -356,6 +395,12 @@ public class App {
                 String namaMatkul = courseMap.getOrDefault(courseId, "Matkul Tidak Diketahui");
                 boolean isPraktik = praktikCourseIds.contains(courseId);
 
+                // Cek pola sesi akhir dari nama forum
+                String forumName = forum.optString("name", "");
+                if (MoodleService.checkEndSessionPattern(forumName)) {
+                    MoodleService.setEndSessionReached(true);
+                }
+
                 // Tentukan status selesai via Moodle completion (= tanda hijau Done di UI)
                 // State: 0=belum, 1=selesai, 2=selesai(pass), 3=selesai(fail)
                 boolean sudahDikerjakan;
@@ -385,6 +430,11 @@ public class App {
                 for (int d = 0; d < discussions.length(); d++) {
                     JSONObject disc = discussions.getJSONObject(d);
                     String namaDiskusi = disc.getString("name");
+
+                    // Cek pola sesi akhir dari nama diskusi
+                    if (MoodleService.checkEndSessionPattern(namaDiskusi)) {
+                        MoodleService.setEndSessionReached(true);
+                    }
                     int discussionId = disc.getInt("id");
 
                     if (!MoodleService.isForumRelevan(namaDiskusi, isPraktik)) {
@@ -442,6 +492,7 @@ public class App {
         }
 
         if (!diskusiBaru.isEmpty()) {
+            adaDiskusiBaru = true;
             StringBuilder pesan = new StringBuilder("💬 Ada " + diskusiBaru.size() + " Diskusi BARU!\n\n");
             for (String d : diskusiBaru)
                 pesan.append("• ").append(d).append("\n");

@@ -187,6 +187,38 @@ public class NotionService {
         simpanDanAmbilId(namaEntri, namaMatkul); // Reuse, cukup buang return value-nya
     }
 
+    /** Hapus/arsip marker status dari Notion */
+    public static void hapusStatusMatkulKomplit() {
+        String pageId = getPageId("[STATUS] Matkul Komplit", "SYSTEM");
+        if (pageId != null) {
+            try {
+                String token = getToken();
+                if (token == null)
+                    return;
+
+                JSONObject body = new JSONObject();
+                body.put("archived", true);
+
+                HttpRequest req = HttpRequest.newBuilder()
+                        .uri(URI.create(NOTION_API + "/pages/" + pageId))
+                        .header("Authorization", "Bearer " + token)
+                        .header("Content-Type", "application/json")
+                        .header("Notion-Version", NOTION_VERSION)
+                        .method("PATCH", HttpRequest.BodyPublishers.ofString(body.toString()))
+                        .build();
+
+                HttpResponse<String> res = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+                if (res.statusCode() == 200) {
+                    System.out.println("🗑️ Berhasil menghapus [STATUS] Matkul Komplit dari Notion.");
+                } else {
+                    System.out.println("⚠️ Gagal menghapus [STATUS] Matkul Komplit: " + res.body());
+                }
+            } catch (Exception e) {
+                System.out.println("❌ Error hapus status Notion: " + e.getMessage());
+            }
+        }
+    }
+
     /** Ambil page ID dari Notion berdasarkan Name + Mata Kuliah */
     public static String getPageId(String nama, String namaMatkul) {
         try {

@@ -5,6 +5,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import io.github.cdimascio.dotenv.Dotenv;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 /**
@@ -36,5 +37,48 @@ public class TelegramService {
         } catch (Exception e) {
             System.out.println("🚨 Error Telegram: " + e.getMessage());
         }
+    }
+
+    /** Cek apakah user mengirimkan keyword di Telegram */
+    public static boolean cekKeyword(String keyword) {
+        try {
+            String botToken = dotenv.get("TELEGRAM_BOT_TOKEN");
+            String chatId = dotenv.get("TELEGRAM_CHAT_ID");
+            if (botToken == null || chatId == null) return false;
+
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.telegram.org/bot" + botToken + "/getUpdates"))
+                    .header("Content-Type", "application/json")
+                    .GET()
+                    .build();
+
+            HttpResponse<String> res = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            if (res.statusCode() == 200) {
+                JSONObject json = new JSONObject(res.body());
+                if (json.has("result")) {
+                    JSONArray updates = json.getJSONArray("result");
+                    for (int i = 0; i < updates.length(); i++) {
+                        JSONObject update = updates.getJSONObject(i);
+                        if (update.has("message")) {
+                            JSONObject message = update.getJSONObject("message");
+                            if (message.has("chat") && message.has("text")) {
+                                JSONObject chat = message.getJSONObject("chat");
+                                long msgChatId = chat.getLong("id");
+                                if (String.valueOf(msgChatId).equals(chatId)) {
+                                    String text = message.getString("text").trim();
+                                    // Cocokkan keyword secara case-insensitive (dengan atau tanpa tanda seru)
+                                    if (text.equalsIgnoreCase(keyword) || text.equalsIgnoreCase(keyword.replace("!", ""))) {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("⚠️ Gagal cek keyword Telegram: " + e.getMessage());
+        }
+        return false;
     }
 }
